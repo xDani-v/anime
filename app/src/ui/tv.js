@@ -45,9 +45,8 @@ export function handleGlobalBack(navigate) {
   // 1. Si el modal de servidores está abierto, cerrarlo primero y volver al video
   const serverPicker = document.querySelector('.server-picker-overlay');
   if (serverPicker) {
-    const closeBtn = serverPicker.querySelector('.server-picker-foot button, .server-picker-head button');
-    if (closeBtn) closeBtn.click();
-    else serverPicker.remove();
+    serverPicker.remove();
+    window.dispatchEvent(new CustomEvent('close-server-picker'));
     return;
   }
 

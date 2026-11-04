@@ -49,13 +49,17 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   const closePlayer = () => {
     clearTimeout(hudTimer);
     window.removeEventListener('keydown', handleKey);
+    window.removeEventListener('close-server-picker', _closeServerPicker);
     screen.removeEventListener('mousemove', onUserActivity);
     screen.removeEventListener('touchstart', onUserActivity);
     releaseWake();
     _destroyHls();
+    _closeServerPicker();
     screen.remove();
     navigate(`/anime/${slug}`);
   };
+
+  window.addEventListener('close-server-picker', _closeServerPicker);
 
   // Auto-ocultamiento de la barra superior (HUD) para pantalla 100% limpia
   function showHUD() {
@@ -192,8 +196,10 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     title.textContent = `Episodio ${epNum} — ${srv.label}`;
     showHUD();
 
-    // 1. Video directo nativo (M3U8 o MP4)
-    if (srv.type === 'video' || srv.url.includes('.m3u8') || srv.url.includes('.mp4')) {
+    // 1. Video directo nativo (M3U8 o MP4) - solo archivos directos de video, nunca iframes/embeds
+    const isDirectVideo = srv.type === 'video' || (/\.(mp4|m3u8)($|\?)/i.test(srv.url) && !srv.url.includes('/embed') && !srv.url.includes('.html'));
+
+    if (isDirectVideo) {
       const video = h('video', {
         controls: true,
         autoplay: true,
@@ -220,7 +226,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       return;
     }
 
-    // 2. Servidores web embebidos (MP4Upload, HLS FHD, Voe, etc. en iframe seguro)
+    // 2. Servidores web embebidos (MP4Upload, HLS FHD, Voe, etc. en iframe)
     let embedUrl = srv.url;
     if (!embedUrl.includes('autoplay=')) {
       embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'autoplay=1&autostart=true';
@@ -229,10 +235,8 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     const frame = h('iframe', {
       class: 'player-frame',
       src: embedUrl,
-      sandbox: 'allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock',
-      allow: 'autoplay *; fullscreen *; encrypted-media *; picture-in-picture *',
+      allow: 'autoplay; fullscreen; encrypted-media; picture-in-picture',
       allowfullscreen: true,
-      referrerpolicy: 'no-referrer-when-downgrade',
       tabindex: '0',
     });
 
@@ -244,7 +248,6 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       }, 100);
     };
 
-    frame.onerror = () => _handleFailure(srv);
     wrap.append(frame);
     requestWake();
     setTimeout(() => { try { frame.focus(); } catch {} }, 250);
@@ -284,10 +287,8 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   let pickerOverlay = null;
 
   function _closeServerPicker() {
-    if (pickerOverlay) {
-      pickerOverlay.remove();
-      pickerOverlay = null;
-    }
+    document.querySelectorAll('.server-picker-overlay').forEach((el) => el.remove());
+    pickerOverlay = null;
     isPickerOpen = false;
     showHUD();
   }
