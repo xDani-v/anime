@@ -120,6 +120,11 @@ export function renderPlayer(svc, slug, epNum, navigate) {
         activeVideo.currentTime = Math.min(activeVideo.duration || 999999, activeVideo.currentTime + 10);
         toast('+10s');
       }
+    } else {
+      const frame = wrap.querySelector('iframe');
+      if (frame && (e.key === 'Enter' || e.key === ' ' || e.keyCode === 13 || e.keyCode === 23)) {
+        try { frame.focus(); } catch {}
+      }
     }
   }
   window.addEventListener('keydown', handleKey);
@@ -178,7 +183,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     await svc.history.save({ slug, epNum: Number(epNum), title: slug, epName: `Episodio ${epNum}`, progress: 0.01 });
   }
 
-  async function playServer(srv) {
+  function playServer(srv) {
     _destroyHls();
     activeVideo = null;
     currentServer = srv;
@@ -187,29 +192,8 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     title.textContent = `Episodio ${epNum} — ${srv.label}`;
     showHUD();
 
-    let resolvedSrv = srv;
-
-    // Si es MP4Upload y aún no tenemos la URL directa del MP4, extraerla para reproducción nativa con control remoto
-    if (srv.url.includes('mp4upload.com') && srv.type !== 'video') {
-      try {
-        wrap.append(loading());
-        const res = await fetch(srv.url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-        const html = await res.text();
-        const m = html.match(/player\.src\(\{\s*type:\s*["']video\/mp4["'],\s*src:\s*["']([^"']+)["']/i) ||
-                  html.match(/src:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i);
-        if (m && m[1]) {
-          resolvedSrv = { ...srv, url: m[1], type: 'video' };
-        }
-      } catch (e) {
-        console.warn('Fallback a iframe en MP4Upload:', e);
-      }
-      wrap.innerHTML = '';
-    }
-
-    // 1. Video directo nativo (MP4 directo o HLS .m3u8)
-    if (resolvedSrv.type === 'video' || resolvedSrv.url.includes('.m3u8') || resolvedSrv.url.includes('.mp4')) {
+    // 1. Video directo nativo (M3U8 o MP4)
+    if (srv.type === 'video' || srv.url.includes('.m3u8') || srv.url.includes('.mp4')) {
       const video = h('video', {
         controls: true,
         autoplay: true,
@@ -224,10 +208,10 @@ export function renderPlayer(svc, slug, epNum, navigate) {
         _handleFailure(srv);
       });
 
-      if (resolvedSrv.url.includes('.m3u8')) {
-        _playHls(video, resolvedSrv.url, srv);
+      if (srv.url.includes('.m3u8')) {
+        _playHls(video, srv.url, srv);
       } else {
-        video.src = resolvedSrv.url;
+        video.src = srv.url;
         video.play().catch(() => {});
       }
 
@@ -236,8 +220,8 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       return;
     }
 
-    // 2. Servidores web embebidos (Iframe)
-    let embedUrl = resolvedSrv.url;
+    // 2. Servidores web embebidos (MP4Upload, HLS FHD, Voe, etc. en iframe seguro)
+    let embedUrl = srv.url;
     if (!embedUrl.includes('autoplay=')) {
       embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'autoplay=1&autostart=true';
     }
@@ -248,17 +232,22 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       sandbox: 'allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock',
       allow: 'autoplay *; fullscreen *; encrypted-media *; picture-in-picture *',
       allowfullscreen: true,
-      referrerpolicy: 'no-referrer',
+      referrerpolicy: 'no-referrer-when-downgrade',
       tabindex: '0',
     });
 
     frame.onload = () => {
-      try { frame.focus(); } catch {}
+      setTimeout(() => {
+        try {
+          frame.focus();
+        } catch {}
+      }, 100);
     };
+
     frame.onerror = () => _handleFailure(srv);
     wrap.append(frame);
     requestWake();
-    setTimeout(() => { try { frame.focus(); } catch {} }, 150);
+    setTimeout(() => { try { frame.focus(); } catch {} }, 250);
   }
 
   async function _playHls(video, src, srv) {
