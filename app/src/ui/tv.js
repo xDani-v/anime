@@ -39,7 +39,71 @@ const FOCUSABLE_SELECTOR = `
   [tabindex="0"]:not([disabled])
 `;
 
+let lastBackTime = 0;
+
+export function handleGlobalBack(navigate) {
+  // 1. Si el modal de servidores está abierto, cerrarlo primero y volver al video
+  const serverPicker = document.querySelector('.server-picker-overlay');
+  if (serverPicker) {
+    const closeBtn = serverPicker.querySelector('.server-picker-foot button, .server-picker-head button');
+    if (closeBtn) closeBtn.click();
+    else serverPicker.remove();
+    return;
+  }
+
+  // 2. Si hay cualquier otro modal abierto, cerrarlo
+  const generalModal = document.querySelector('.overlay');
+  if (generalModal) {
+    const closeBtn = generalModal.querySelector('.sheet-head button, .overlay');
+    if (closeBtn) closeBtn.click();
+    else generalModal.remove();
+    return;
+  }
+
+  // 3. Si el reproductor de video a pantalla completa está abierto, cerrarlo y volver a los detalles
+  const playerScreen = document.querySelector('.player-screen');
+  if (playerScreen) {
+    const backBtn = playerScreen.querySelector('.player-topbar .icon-btn');
+    if (backBtn) {
+      backBtn.click();
+      return;
+    }
+    playerScreen.remove();
+    return;
+  }
+
+  // 4. Si estamos en una subpágina, regresar a la portada
+  const path = location.pathname;
+  if (path !== '/' && path !== '') {
+    if (navigate) navigate('/');
+    else history.back();
+    return;
+  }
+
+  // 5. Si estamos en la portada (Home /): doble pulsación en 2s para salir limpiamente
+  const now = Date.now();
+  if (now - lastBackTime < 2200) {
+    window.Capacitor?.Plugins?.App?.exitApp?.();
+  } else {
+    lastBackTime = now;
+    const toastEl = document.getElementById('toast');
+    if (toastEl) {
+      toastEl.className = 'toast show';
+      toastEl.textContent = 'Presiona Atrás otra vez para salir de AnimeAV1';
+      setTimeout(() => toastEl.classList.remove('show'), 2000);
+    }
+  }
+}
+
 export function initTVNavigation(navigate) {
+  // Conectar con el botón nativo Atrás de Android / Capacitor
+  const AppPlugin = window.Capacitor?.Plugins?.App;
+  if (AppPlugin) {
+    AppPlugin.addListener('backButton', () => {
+      handleGlobalBack(navigate);
+    });
+  }
+
   // Detector de interacción por puntero (mouse / touch) vs control remoto / teclado.
   let isPointerInteraction = false;
   window.addEventListener('pointerdown', () => { isPointerInteraction = true; }, true);
@@ -49,25 +113,11 @@ export function initTVNavigation(navigate) {
 
   // 1. Manejo global de teclas de control remoto
   window.addEventListener('keydown', (e) => {
-    // Si hay un modal o el reproductor está abierto, ellos tienen su propio control
-    if (document.querySelector('.player-screen')) {
-      // En reproductor, la tecla Back cierra el reproductor
-      if (isKey(e, 'BACK')) {
-        e.preventDefault();
-        const backBtn = document.querySelector('.player-topbar .icon-btn');
-        if (backBtn) backBtn.click();
-        return;
-      }
-      return;
-    }
-
-    // Tecla BACK del control remoto en navegación normal
+    // Tecla BACK del control remoto (en cualquier pantalla o modal)
     if (isKey(e, 'BACK')) {
       e.preventDefault();
-      const path = location.pathname;
-      if (path !== '/' && path !== '') {
-        history.back();
-      }
+      e.stopPropagation();
+      handleGlobalBack(navigate);
       return;
     }
 
@@ -79,6 +129,12 @@ export function initTVNavigation(navigate) {
         active.click();
         return;
       }
+    }
+
+    // Si el reproductor a pantalla completa está visible y el modal de servidores NO está abierto,
+    // dejar que el reproductor maneje reproducción y pausa
+    if (document.querySelector('.player-screen') && !document.querySelector('.server-picker-overlay')) {
+      return;
     }
 
     // Navegación D-Pad (Arriba, Abajo, Izquierda, Derecha)

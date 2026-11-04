@@ -45,6 +45,7 @@ const ICONS = {
   clock:    'M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   play:     'M5 3l14 9-14 9z',
   back:     'M15 5l-7 7 7 7',
+  close:    'M18 6L6 18M6 6l12 12',
   minus:    'M5 12h14',
   check:    'M5 13l4 4L19 7',
   trash:    'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',

@@ -287,7 +287,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
         h('h3', null, 'Seleccionar Servidor'),
         h('div', { class: 'caption-sub' }, 'Usa las flechas del control y pulsa OK para reproducir'),
       ),
-      iconBtn('minus', 'Cerrar', _closeServerPicker, 'ghost'),
+      iconBtn('close', 'Cerrar', () => _closeServerPicker(), 'ghost'),
     );
     modalBox.append(head);
 
@@ -338,9 +338,37 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     modalBox.append(list);
 
     const foot = h('div', { class: 'server-picker-foot' },
-      btn('Volver al video', _closeServerPicker, { cls: 'ghost' }),
+      btn('Volver al video', () => _closeServerPicker(), { cls: 'ghost' }),
     );
     modalBox.append(foot);
+
+    // Navegación D-Pad interna para el modal
+    modalBox.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || e.key === 'Backspace' || e.keyCode === 27 || e.keyCode === 4 || e.keyCode === 10009) {
+        e.preventDefault();
+        e.stopPropagation();
+        _closeServerPicker();
+        return;
+      }
+
+      if (e.keyCode === 23) {
+        e.preventDefault();
+        document.activeElement?.click?.();
+        return;
+      }
+
+      const allBtns = [...modalBox.querySelectorAll('button:not([disabled])')];
+      const curIdx = allBtns.indexOf(document.activeElement);
+      if (curIdx === -1) return;
+
+      if (e.key === 'ArrowUp' || e.keyCode === 38 || e.keyCode === 19) {
+        e.preventDefault();
+        if (curIdx > 0) allBtns[curIdx - 1].focus();
+      } else if (e.key === 'ArrowDown' || e.keyCode === 40 || e.keyCode === 20) {
+        e.preventDefault();
+        if (curIdx < allBtns.length - 1) allBtns[curIdx + 1].focus();
+      }
+    });
 
     pickerOverlay.append(modalBox);
     screen.append(pickerOverlay);
