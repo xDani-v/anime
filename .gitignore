@@ -1,0 +1,7 @@
+node_modules/
+android/
+*.keystore
+keystore.b64
+.DS_Store
+Thumbs.db
+*.log

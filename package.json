@@ -1,0 +1,25 @@
+{
+  "name": "animeav1-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cliente de AnimeAV1 100 % local para Android. Sin cuentas, sin servidores propios, sin telemetría.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "serve": "node scripts/serve.mjs",
+    "android:add": "cap add android",
+    "android:sync": "cap sync android",
+    "android:open": "cap open android",
+    "android:apk": "cap sync android && cd android && gradlew assembleDebug",
+    "android:icons": "capacitor-assets generate --android",
+    "android:configure-tv": "node scripts/configure-tv-manifest.mjs",
+    "assets:generate": "node scripts/generate-icons.mjs"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/assets": "^3.0.5"
+  },
+  "dependencies": {}
+}

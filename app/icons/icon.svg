@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c1c1e" />
+      <stop offset="100%" stop-color="#0b0b0c" />
+    </linearGradient>
+    <linearGradient id="playGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff4d4d" />
+      <stop offset="100%" stop-color="#c1121f" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <!-- Anillo exterior estilizado -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#2a2a2e" stroke-width="16" />
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#e63946" stroke-width="16" stroke-dasharray="280 850" stroke-linecap="round" />
+  <!-- Triángulo Play central -->
+  <path d="M216 172 L356 256 L216 340 Z" fill="url(#playGrad)" />
+</svg>
