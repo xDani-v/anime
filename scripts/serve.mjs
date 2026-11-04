@@ -31,6 +31,36 @@ http.createServer(async (req, res) => {
 
   const parsedUrl = new URL(req.url, `http://localhost:${port}`);
 
+  // Streaming de video con Referer de mp4upload y soporte Range (solo desarrollo)
+  if (parsedUrl.pathname === '/api/stream') {
+    const targetUrl = parsedUrl.searchParams.get('url');
+    if (!targetUrl) { res.writeHead(400).end('Falta parámetro url'); return; }
+    try {
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://www.mp4upload.com/',
+      };
+      if (req.headers.range) headers.Range = req.headers.range;
+      const upstream = await fetch(targetUrl, { headers });
+      const out = { 'cache-control': 'no-store' };
+      for (const k of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+        const v = upstream.headers.get(k);
+        if (v) out[k] = v;
+      }
+      out['content-type'] = 'video/mp4';
+      res.writeHead(upstream.status, out);
+      if (!upstream.body) { res.end(); return; }
+      const { Readable } = await import('node:stream');
+      const stream = Readable.fromWeb(upstream.body);
+      res.on('close', () => stream.destroy());
+      stream.on('error', () => res.end());
+      stream.pipe(res);
+    } catch (err) {
+      res.writeHead(502).end(`Error stream: ${err.message}`);
+    }
+    return;
+  }
+
   // Endpoint PROXY para evitar CORS en el navegador durante desarrollo
   if (parsedUrl.pathname === '/api/proxy') {
     const targetUrl = parsedUrl.searchParams.get('url');

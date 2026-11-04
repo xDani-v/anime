@@ -3,6 +3,7 @@
 // y panel modal de cambio de servidor navegable con control remoto (D-Pad).
 
 import { h, btn, iconBtn, loading, toast } from './dom.js';
+import { resolveDirectSource } from '../core/scraper.js';
 
 let hlsInstance = null; // instancia activa de Hls.js
 
@@ -46,7 +47,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     }
   }
 
-  const closePlayer = () => {
+  const teardown = () => {
     clearTimeout(hudTimer);
     window.removeEventListener('keydown', handleKey);
     window.removeEventListener('close-server-picker', _closeServerPicker);
@@ -56,8 +57,30 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     _destroyHls();
     _closeServerPicker();
     screen.remove();
+  };
+
+  const closePlayer = () => {
+    teardown();
     navigate(`/anime/${slug}`);
   };
+
+  // Episodios del anime (para anterior/siguiente)
+  let epNums = [];
+  const curEp = Number(epNum);
+  const idx = () => epNums.indexOf(curEp);
+  const prevEp = () => {
+    if (epNums.length) return idx() > 0 ? epNums[idx() - 1] : null;
+    return curEp > 1 ? curEp - 1 : null;
+  };
+  const nextEp = () => {
+    if (epNums.length) return idx() !== -1 && idx() < epNums.length - 1 ? epNums[idx() + 1] : null;
+    return curEp + 1;
+  };
+  function goEpisode(n) {
+    if (n == null) { toast('No hay más episodios'); return; }
+    teardown();
+    navigate(`/watch/${slug}/${n}`);
+  }
 
   window.addEventListener('close-server-picker', _closeServerPicker);
 
@@ -67,6 +90,8 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     clearTimeout(hudTimer);
     if (!isPickerOpen) {
       hudTimer = setTimeout(() => {
+        // No ocultar la barra mientras el usuario navega por ella con el D-Pad
+        if (topbar.contains(document.activeElement)) { showHUD(); return; }
         topbar.classList.add('hud-hidden');
       }, 3500);
     }
@@ -98,10 +123,50 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       return;
     }
 
+    // Navegación dentro de la barra superior (Anterior / Siguiente / Servidor)
+    if (topbar.contains(document.activeElement)) {
+      const btns = [...topbar.querySelectorAll('button:not([disabled])')];
+      const i = btns.indexOf(document.activeElement);
+      if (e.key === 'ArrowLeft' || e.keyCode === 21) {
+        e.preventDefault();
+        if (i > 0) btns[i - 1].focus();
+      } else if (e.key === 'ArrowRight' || e.keyCode === 22) {
+        e.preventDefault();
+        if (i < btns.length - 1) btns[i + 1].focus();
+      } else if (e.key === 'ArrowDown' || e.keyCode === 20) {
+        e.preventDefault();
+        document.activeElement.blur(); // devolver el control al video
+        try { wrap.querySelector('iframe')?.focus(); } catch {}
+      }
+      // Enter / OK: se deja actuar al botón enfocado (no hacer play/pausa)
+      if (e.key !== 'n' && e.key !== 'N' && e.key !== 'p' && e.key !== 'P' && e.key !== 's' && e.key !== 'S') return;
+    }
+
+    // Flecha Arriba: mostrar la barra y enfocar "Siguiente" (o el primer botón disponible)
+    if (e.key === 'ArrowUp' || e.keyCode === 19) {
+      e.preventDefault();
+      topbar.classList.remove('hud-hidden');
+      (!nextBtn.disabled ? nextBtn : topbar.querySelector('button:not([disabled])'))?.focus();
+      showHUD();
+      return;
+    }
+
     // Tecla para abrir selector de servidores: Flecha Abajo o tecla 's'
     if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
       e.preventDefault();
       openServerPickerModal();
+      return;
+    }
+
+    // Siguiente / anterior episodio: N / P, PageDown / PageUp, teclas multimedia
+    if (e.key === 'n' || e.key === 'N' || e.key === 'MediaTrackNext' || e.key === 'PageDown' || e.keyCode === 87) {
+      e.preventDefault();
+      goEpisode(nextEp());
+      return;
+    }
+    if (e.key === 'p' || e.key === 'P' || e.key === 'MediaTrackPrevious' || e.key === 'PageUp' || e.keyCode === 88) {
+      e.preventDefault();
+      goEpisode(prevEp());
       return;
     }
 
@@ -143,7 +208,15 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     openServerPickerModal();
   }, { cls: 'ghost', ic: 'refresh', title: 'Ver servidores disponibles' });
 
-  topbar.append(backBtn, title, pickServerBtn);
+  const prevBtn = btn('Anterior', () => goEpisode(prevEp()), { cls: 'ghost', ic: 'prev', title: 'Episodio anterior (P)' });
+  const nextBtn = btn('Siguiente', () => goEpisode(nextEp()), { cls: 'ghost', ic: 'next', title: 'Episodio siguiente (N)' });
+  function refreshNavBtns() {
+    prevBtn.disabled = prevEp() == null;
+    nextBtn.disabled = nextEp() == null;
+  }
+  refreshNavBtns();
+
+  topbar.append(backBtn, title, prevBtn, nextBtn, pickServerBtn);
   screen.append(topbar);
 
   // Zona de reproducción (100% de la pantalla)
@@ -155,6 +228,11 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   showHUD();
 
   async function init() {
+    svc.anime.getAnimeInfo(slug).then((info) => {
+      epNums = (info.episodes || []).map((e) => Number(e.num)).sort((a, b) => a - b);
+      refreshNavBtns();
+    }).catch(() => {});
+
     let sources;
     try {
       sources = await svc.anime.getEpisodeSources(slug, epNum);
@@ -187,11 +265,26 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     await svc.history.save({ slug, epNum: Number(epNum), title: slug, epName: `Episodio ${epNum}`, progress: 0.01 });
   }
 
-  function playServer(srv) {
+  let playToken = 0;
+
+  async function playServer(srv) {
+    const token = ++playToken;
+    const original = srv; // para marcar fallos / servidor activo en el selector
     _destroyHls();
     activeVideo = null;
     currentServer = srv;
     wrap.innerHTML = '';
+    wrap.append(loading());
+
+    // Estrategia A: intentar extraer el video real para reproducirlo nativo (OK/D-Pad funciona)
+    if (srv.type !== 'video') {
+      const direct = await resolveDirectSource(srv);
+      if (token !== playToken) return; // el usuario cambió de servidor
+      wrap.innerHTML = '';
+      if (direct) {
+        srv = { ...srv, url: direct.url, type: 'video', hls: direct.hls };
+      }
+    }
 
     title.textContent = `Episodio ${epNum} — ${srv.label}`;
     showHUD();
@@ -211,18 +304,22 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       requestWake();
 
       video.addEventListener('error', () => {
-        _handleFailure(srv);
+        _handleFailure(original);
       });
 
-      if (srv.url.includes('.m3u8')) {
-        _playHls(video, srv.url, srv);
+      if (srv.hls || srv.url.includes('.m3u8')) {
+        _playHls(video, srv.url, original);
       } else {
         video.src = srv.url;
         video.play().catch(() => {});
       }
 
       video.addEventListener('pause', () => _saveProgress(video));
-      video.addEventListener('ended', () => _saveProgress(video, 1));
+      video.addEventListener('ended', () => {
+        _saveProgress(video, 1);
+        const n = nextEp();
+        if (n != null) { toast(`Siguiente: episodio ${n}`); setTimeout(() => goEpisode(n), 1500); }
+      });
       return;
     }
 

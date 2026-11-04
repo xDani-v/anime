@@ -85,4 +85,46 @@ if (fs.existsSync(activityPath)) {
     fs.writeFileSync(activityPath, actContent, 'utf8');
     console.log('✓ MainActivity.java configurado para autoplay de video sin gestos táctiles.');
   }
+
+  // 8. Inyectar Referer de mp4upload.com en las peticiones <video> (sin él el CDN responde 403)
+  actContent = fs.readFileSync(activityPath, 'utf8');
+  if (!actContent.includes('shouldInterceptRequest')) {
+    actContent = actContent.replace(
+      'settings.setMediaPlaybackRequiresUserGesture(false);',
+      `settings.setMediaPlaybackRequiresUserGesture(false);
+            final com.getcapacitor.Bridge br = this.bridge;
+            br.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(br) {
+                @Override
+                public android.webkit.WebResourceResponse shouldInterceptRequest(android.webkit.WebView view, android.webkit.WebResourceRequest request) {
+                    android.net.Uri u = request.getUrl();
+                    String host = u.getHost();
+                    String path = u.getPath();
+                    if (host != null && host.endsWith("mp4upload.com") && path != null && path.endsWith(".mp4")) {
+                        try {
+                            java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(u.toString()).openConnection();
+                            c.setRequestProperty("Referer", "https://www.mp4upload.com/");
+                            c.setRequestProperty("User-Agent", request.getRequestHeaders().containsKey("User-Agent") ? request.getRequestHeaders().get("User-Agent") : "Mozilla/5.0");
+                            String range = request.getRequestHeaders().get("Range");
+                            if (range != null) c.setRequestProperty("Range", range);
+                            c.setConnectTimeout(15000);
+                            c.setReadTimeout(30000);
+                            int code = c.getResponseCode();
+                            java.util.Map<String, String> h = new java.util.HashMap<>();
+                            String[] keys = {"Content-Length", "Content-Range", "Accept-Ranges"};
+                            for (String k : keys) { String v = c.getHeaderField(k); if (v != null) h.put(k, v); }
+                            h.put("Access-Control-Allow-Origin", "*");
+                            String reason = code == 206 ? "Partial Content" : (code == 200 ? "OK" : "Error");
+                            return new android.webkit.WebResourceResponse("video/mp4", null, code, reason, h,
+                                code >= 400 ? c.getErrorStream() : c.getInputStream());
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                    }
+                    return super.shouldInterceptRequest(view, request);
+                }
+            });`
+    );
+    fs.writeFileSync(activityPath, actContent, 'utf8');
+    console.log('✓ MainActivity.java: Referer de mp4upload inyectado vía shouldInterceptRequest.');
+  }
 }

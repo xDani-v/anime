@@ -21,6 +21,35 @@ function resolveUrl(url) {
   return url;
 }
 
+function isDevProxy() {
+  return typeof window !== 'undefined' && !window.Capacitor &&
+    window.location?.hostname === 'localhost' && window.location?.port === '5174';
+}
+
+/**
+ * Convierte un servidor embebido en una fuente de video directa reproducible con <video>/Hls.js.
+ * Devuelve { url, hls } o null si no se puede extraer (el reproductor cae al iframe).
+ *  - HLS (Zilla): https://player.zilla-networks.com/play/{id} -> /m3u8/{id}
+ *  - MP4Upload: el mp4 real está en el HTML del embed; exige Referer mp4upload.com
+ *    (en APK lo inyecta MainActivity.shouldInterceptRequest; en dev, /api/stream).
+ */
+export async function resolveDirectSource(srv) {
+  const url = srv?.url || '';
+  try {
+    const z = url.match(/player\.zilla-networks\.com\/play\/([a-z0-9]{32})/i);
+    if (z) return { url: `https://player.zilla-networks.com/m3u8/${z[1]}`, hls: true };
+
+    if (/mp4upload\.com\/embed-/i.test(url)) {
+      const html = await fetchHtml(url);
+      const m = html.match(/src:\s*"(https?:[^"]+\.mp4[^"]*)"/i);
+      if (!m) return null;
+      const direct = m[1];
+      return { url: isDevProxy() ? `/api/stream?url=${encodeURIComponent(direct)}` : direct, hls: false };
+    }
+  } catch { /* cae al iframe */ }
+  return null;
+}
+
 // Fetch con headers para simular navegador
 async function fetchHtml(url) {
   const target = resolveUrl(url);
