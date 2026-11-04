@@ -4,10 +4,19 @@
 
 const BASE = 'https://animeav1.com';
 
-// Resuelve la URL adecuada: si estamos en desarrollo en localhost, usa el proxy local para evitar CORS.
+// Resuelve la URL adecuada:
+// - En el APK de Android (Capacitor / Smart TV), consulta directamente la web oficial.
+// - Solo en desarrollo local en PC (localhost:5174), usa el proxy local para evitar CORS del navegador de escritorio.
 function resolveUrl(url) {
-  if (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost') {
-    return `/api/proxy?url=${encodeURIComponent(url)}`;
+  if (typeof window !== 'undefined' && window.location) {
+    // Si estamos en la app nativa (Capacitor en Android / Smart TV), consultar directamente sin proxy local
+    if (window.Capacitor || !window.location.port || window.location.protocol === 'capacitor:') {
+      return url;
+    }
+    // Solo si estamos en el servidor de desarrollo local de PC (puerto 5174)
+    if (window.location.hostname === 'localhost' && window.location.port === '5174') {
+      return `/api/proxy?url=${encodeURIComponent(url)}`;
+    }
   }
   return url;
 }

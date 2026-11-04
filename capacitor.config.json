@@ -2,6 +2,15 @@
   "appId": "com.animeav1.app",
   "appName": "AnimeAV1",
   "webDir": "app",
-  "android": { "allowMixedContent": true },
-  "server": { "androidScheme": "https" }
+  "android": {
+    "allowMixedContent": true
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }
