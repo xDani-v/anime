@@ -9,6 +9,8 @@ import { renderPlayer }   from './ui/player.js';
 import { renderFavorites } from './ui/favorites.js';
 import { renderHistory }  from './ui/history.js';
 import { initTVNavigation, focusInitialTVElement } from './ui/tv.js';
+import { toast } from './ui/dom.js';
+import { initOTAUpdater } from './services/updater.js';
 
 // ---------- Rutas ----------
 // /                  → home
@@ -83,6 +85,7 @@ window.addEventListener('popstate', () => route());
 
 // ---------- Arranque ----------
 async function main() {
+  initOTAUpdater(toast); // Inicializar actualizaciones en vivo OTA para Smart TV & Android
   const store = await openIdbStore();
   svc = createServices(store);
   initTVNavigation(navigate); // Inicializar navegación espacial para Smart TV

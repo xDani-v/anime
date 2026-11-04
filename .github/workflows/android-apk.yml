@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
   KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -25,6 +28,12 @@ jobs:
           java-version: 21
       - run: npm install
       - run: npm test
+      - name: Empaquetar actualización web OTA (bundle.zip + version.json)
+        run: |
+          cd app && zip -r ../bundle.zip . && cd ..
+          VERSION_SHORT="${GITHUB_SHA::7}"
+          echo "{\"version\":\"${VERSION_SHORT}\",\"url\":\"https://github.com/${{ github.repository }}/releases/download/latest/bundle.zip\"}" > version.json
+          echo "Versión OTA generada: ${VERSION_SHORT}"
       - run: npx cap add android
       - name: Iconos del launcher (desde assets/)
         run: npx capacitor-assets generate --android
@@ -68,3 +77,18 @@ jobs:
         with:
           name: animeav1-apk-firmado
           path: ${{ steps.sign.outputs.signedReleaseFile }}
+
+      - name: Publicar Release en GitHub con APK y Actualización OTA
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          tag_name: latest
+          name: "AnimeAV1 Última Versión"
+          body: |
+            ### 📺 AnimeAV1 para Android TV & Mobile
+            - **Commit:** `${{ github.sha }}`
+            - **Actualización OTA habilitada:** los cambios web futuros se descargan solos sin reinstalar el APK.
+          files: |
+            bundle.zip
+            version.json
+            android/app/build/outputs/apk/debug/app-debug.apk

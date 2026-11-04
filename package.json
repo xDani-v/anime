@@ -22,6 +22,7 @@
     "@capacitor/core": "^7.0.0"
   },
   "dependencies": {
-    "@capacitor/app": "^7.1.2"
+    "@capacitor/app": "^7.1.2",
+    "@capgo/capacitor-updater": "^7.53.0"
   }
 }
