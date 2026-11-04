@@ -250,6 +250,27 @@ export async function getAnimeInfo(slug) {
   };
 }
 
+/**
+ * Extrae los servidores embebidos del HTML de SvelteKit conservando el idioma.
+ * embeds:{SUB:[{server:"HLS",url:"..."}],DUB:[...]} -> [{ lang, server, url }]
+ */
+export function parseEmbeds(html = '') {
+  const start = html.indexOf('embeds:');
+  if (start === -1) return [];
+  const end = html.indexOf('downloads:', start);
+  const section = html.slice(start, end !== -1 ? end : start + 4000);
+  const item = /\{server:"([^"]+)",url:"([^"]+)"\}/g;
+  const out = [];
+  for (const m of section.matchAll(/(SUB|DUB):\[(.*?)\]/gs)) {
+    for (const it of m[2].matchAll(item)) out.push({ lang: m[1], server: it[1], url: it[2] });
+  }
+  if (!out.length) {
+    // Formato desconocido: comportamiento anterior (sin idioma, se asume SUB)
+    for (const it of section.matchAll(item)) out.push({ lang: 'SUB', server: it[1], url: it[2] });
+  }
+  return out;
+}
+
 /** Fuentes de video para reproducir un episodio (descartando enlaces de descarga) */
 export async function getEpisodeSources(slug, epNum) {
   const url = `${BASE}/media/${slug}/${epNum}`;
@@ -258,24 +279,13 @@ export async function getEpisodeSources(slug, epNum) {
 
   const servers = [];
 
-  // 1. Extraer estrictamente de la sección "embeds:" de SvelteKit
-  const embedsIdx = html.indexOf('embeds:');
-  const downloadsIdx = html.indexOf('downloads:');
-  const embedsSection = embedsIdx !== -1
-    ? html.slice(embedsIdx, downloadsIdx !== -1 ? downloadsIdx : embedsIdx + 2500)
-    : html;
-
-  const serverMatches = [...embedsSection.matchAll(/\{server:"([^"]+)",url:"([^"]+)"\}/g)];
-  for (const m of serverMatches) {
-    const label = m[1];
-    const srcUrl = m[2];
-
+  // 1. Extraer de la sección "embeds:" de SvelteKit, separando SUB (subtitulado) y DUB (doblado)
+  for (const e of parseEmbeds(html)) {
     // Descartar de raíz enlaces de descarga no reproducibles
-    if (/mega\.nz|1fichier|mediafire|drive\.google/i.test(srcUrl)) continue;
-
-    if (!servers.some((s) => s.url === srcUrl)) {
-      const type = srcUrl.includes('.m3u8') ? 'video' : 'iframe';
-      servers.push({ label: _labelFromServer(label, srcUrl), url: srcUrl, type });
+    if (/mega\.nz|1fichier|mediafire|drive\.google/i.test(e.url)) continue;
+    if (!servers.some((s) => s.url === e.url && s.lang === e.lang)) {
+      const type = e.url.includes('.m3u8') ? 'video' : 'iframe';
+      servers.push({ label: _labelFromServer(e.server, e.url), url: e.url, type, lang: e.lang });
     }
   }
 
@@ -285,7 +295,7 @@ export async function getEpisodeSources(slug, epNum) {
     for (const fr of iframes) {
       const src = fr.src || fr.getAttribute('src');
       if (src && !/mega\.nz|1fichier|mediafire/i.test(src) && !servers.some((s) => s.url === src)) {
-        servers.push({ label: _labelFromUrl(src), url: src, type: 'iframe' });
+        servers.push({ label: _labelFromUrl(src), url: src, type: 'iframe', lang: 'SUB' });
       }
     }
   }

@@ -1,5 +1,6 @@
 // Pantalla de detalle de un anime: portada, sinopsis, lista de episodios.
 import { h, btn, icon, loading, empty, toast } from './dom.js';
+import { nextTarget } from '../services/history.js';
 
 export function renderDetail(svc, slug, navigate) {
   const root = h('div', { class: 'detail-screen' });
@@ -12,7 +13,8 @@ export function renderDetail(svc, slug, navigate) {
     try {
       anime = await svc.anime.getAnimeInfo(slug);
     } catch (e) {
-      root.append(empty('Error', e.message));
+      root.append(empty('No se pudo cargar', 'Sin conexión o el sitio no responde. No hay datos guardados de este anime.',
+        btn('Reintentar', () => { root.replaceChildren(loading()); load(); }, { cls: 'primary', ic: 'refresh' })));
       return;
     }
 
@@ -67,11 +69,26 @@ export function renderDetail(svc, slug, navigate) {
     });
     actions.append(favBtn);
 
-    // Botón "Ver desde el principio"
+    // Continuar / Ver desde el principio
     if (anime.episodes?.length) {
-      const firstEp = [...anime.episodes].sort((a, b) => (a.num || 0) - (b.num || 0))[0];
-      if (firstEp) {
-        actions.append(btn('Ver ahora', () => navigate(`/watch/${slug}/${firstEp.num || 1}`), { cls: 'primary', ic: 'play' }));
+      const sorted = [...anime.episodes].sort((a, b) => (a.num || 0) - (b.num || 0));
+      const firstEp = sorted[0];
+      const epNums = sorted.map((e) => Number(e.num));
+      const last = await svc.history.lastWatched(slug);
+      const target = nextTarget(last, epNums);
+      const exists = target && epNums.includes(target.epNum);
+
+      if (exists) {
+        const label = target.resume
+          ? `Continuar episodio ${target.epNum} · ${_fmt(target.position)}`
+          : (last.epNum === target.epNum ? `Ver episodio ${target.epNum}` : `Siguiente: episodio ${target.epNum}`);
+        actions.append(btn(label, () => navigate(`/watch/${slug}/${target.epNum}`), { cls: 'primary', ic: 'play' }));
+        if (target.epNum !== firstEp.num) {
+          actions.append(btn('Desde el principio', () => navigate(`/watch/${slug}/${firstEp.num || 1}`), { cls: 'ghost', ic: 'refresh' }));
+        }
+      } else if (firstEp) {
+        const finished = last && !target; // vio hasta el último episodio
+        actions.append(btn(finished ? 'Volver a ver' : 'Ver ahora', () => navigate(`/watch/${slug}/${firstEp.num || 1}`), { cls: 'primary', ic: 'play' }));
       }
     }
     root.append(actions);
@@ -117,4 +134,10 @@ export function renderDetail(svc, slug, navigate) {
 function epNumFromUrl(url = '') {
   const m = url.match(/episodio[-_]?(\d+)/i) || url.match(/\/(\d+)\/?$/);
   return m ? Number(m[1]) : null;
+}
+
+function _fmt(sec = 0) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
 }

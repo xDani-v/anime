@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 // Importamos solo las funciones puras (no hacen fetch)
-import { slugFromUrl, epNumFromUrl } from '../app/src/core/scraper.js';
+import { slugFromUrl, epNumFromUrl, parseEmbeds } from '../app/src/core/scraper.js';
 
 test('slugFromUrl extrae el slug correctamente', () => {
   assert.equal(slugFromUrl('https://animeav1.com/media/one-piece/'), 'one-piece');
@@ -30,4 +30,16 @@ test('epNumFromUrl extrae número de episodio', () => {
 test('epNumFromUrl devuelve null si no hay número', () => {
   assert.equal(epNumFromUrl('https://animeav1.com/anime/one-piece/'), null);
   assert.equal(epNumFromUrl(''), null);
+});
+
+test('parseEmbeds separa SUB y DUB y mantiene el orden', () => {
+  const html = 'x embeds:{SUB:[{server:"HLS",url:"https://z/play/a"},{server:"MP4Upload",url:"https://m/embed-1.html"}],' +
+    'DUB:[{server:"HLS",url:"https://z/play/b"}]},downloads:{SUB:[{server:"Mega",url:"https://mega.nz/x"}]}';
+  const r = parseEmbeds(html);
+  assert.deepEqual(r.map((e) => `${e.lang}:${e.server}`), ['SUB:HLS', 'SUB:MP4Upload', 'DUB:HLS']);
+  assert.ok(!r.some((e) => e.url.includes('mega')), 'no debe incluir descargas');
+});
+
+test('parseEmbeds sin embeds devuelve lista vacía', () => {
+  assert.deepEqual(parseEmbeds('<html></html>'), []);
 });

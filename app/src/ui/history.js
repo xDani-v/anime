@@ -1,5 +1,6 @@
 // Pantalla de historial de reproducción.
 import { h, loading, empty, toast, confirmDlg, btn } from './dom.js';
+import { prettyTitle } from '../services/history.js';
 
 export function renderHistory(svc, navigate) {
   const root = h('div', { class: 'history-screen' });
@@ -49,7 +50,7 @@ export function renderHistory(svc, navigate) {
         },
       },
         h('div', { class: 'ep-info' },
-          h('div', { class: 'ep-num' }, `${item.title} — ${item.epName}`),
+          h('div', { class: 'ep-num' }, `${prettyTitle(item)} — ${item.epName}`),
           h('div', { class: 'ep-name' }, new Date(item.watchedAt).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })),
           h('div', { class: 'progress-bar' }, h('div', { class: 'progress-bar-fill', style: `width:${pct}%` })),
         ),
@@ -63,3 +64,4 @@ export function renderHistory(svc, navigate) {
   load();
   return root;
 }
+

@@ -8,6 +8,7 @@ import { renderDetail }   from './ui/detail.js';
 import { renderPlayer }   from './ui/player.js';
 import { renderFavorites } from './ui/favorites.js';
 import { renderHistory }  from './ui/history.js';
+import { renderSettings } from './ui/settings.js';
 import { initTVNavigation, focusInitialTVElement } from './ui/tv.js';
 import { toast } from './ui/dom.js';
 import { initOTAUpdater } from './services/updater.js';
@@ -67,6 +68,9 @@ function route(path = location.pathname + location.search) {
   } else if (path === '/historial') {
     view.append(renderHistory(svc, navigate));
 
+  } else if (path === '/ajustes') {
+    view.append(renderSettings(svc, navigate));
+
   } else {
     view.textContent = 'Página no encontrada';
   }
@@ -80,6 +84,10 @@ document.querySelectorAll('.nav-btn[data-route]').forEach((btn) => {
   btn.addEventListener('click', () => navigate(btn.dataset.route));
 });
 
+// ---------- Estado de conexión ----------
+window.addEventListener('offline', () => toast('Sin conexión: mostrando datos guardados', 'error'));
+window.addEventListener('online',  () => toast('Conexión restablecida'));
+
 // ---------- Back/forward ----------
 window.addEventListener('popstate', () => route());
 
@@ -88,6 +96,7 @@ async function main() {
   initOTAUpdater(toast); // Inicializar actualizaciones en vivo OTA para Smart TV & Android
   const store = await openIdbStore();
   svc = createServices(store);
+  svc.cache.prune().catch(() => {}); // limpia datos de caché muy antiguos
   initTVNavigation(navigate); // Inicializar navegación espacial para Smart TV
   route(); // renderiza la ruta inicial
 }

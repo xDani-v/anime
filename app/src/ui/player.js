@@ -27,6 +27,9 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   let wakeLock = null;
   let activeVideo = null;
   let allServers = [];
+  let lang = 'SUB';              // idioma activo (SUB / DUB)
+  let settings = { autoNext: true };
+  let autoNextCancel = null;     // función que cancela la cuenta atrás de 'siguiente episodio'
   let currentServer = null;
   const failedServers = new Set();
   let hudTimer = null;
@@ -48,6 +51,10 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   }
 
   const teardown = () => {
+    autoNextCancel?.();
+    saveNow();
+    window.removeEventListener('pagehide', saveNow);
+    document.removeEventListener('visibilitychange', onVisibility);
     clearTimeout(hudTimer);
     window.removeEventListener('keydown', handleKey);
     window.removeEventListener('close-server-picker', _closeServerPicker);
@@ -63,6 +70,28 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     teardown();
     navigate(`/anime/${slug}`);
   };
+
+  // ---- Progreso / historial ----
+  let animeTitle = _humanize(slug);
+  let animeCover = '';
+  let resumeAt = 0;          // segundo desde el que reanudar
+  let lastSaveAt = 0;
+  let savedEnded = false;
+
+  function saveNow() {
+    const v = activeVideo;
+    if (!v || savedEnded) return;
+    const d = v.duration;
+    if (!Number.isFinite(d) || d <= 0 || v.currentTime <= 0) return;
+    lastSaveAt = Date.now();
+    svc.history.save({
+      slug, epNum: curEp, title: animeTitle, cover: animeCover, epName: `Episodio ${epNum}`,
+      progress: v.currentTime / d, position: v.currentTime, duration: d,
+    }).catch(() => {});
+  }
+  const onVisibility = () => { if (document.visibilityState === 'hidden') saveNow(); };
+  window.addEventListener('pagehide', saveNow);
+  document.addEventListener('visibilitychange', onVisibility);
 
   // Episodios del anime (para anterior/siguiente)
   let epNums = [];
@@ -106,6 +135,20 @@ export function renderPlayer(svc, slug, epNum, navigate) {
 
   function handleKey(e) {
     showHUD();
+
+    // Cuenta atrás de "siguiente episodio": Atrás cancela, flechas alternan botones, OK activa el botón
+    if (autoNextCancel) {
+      if (e.key === 'Escape' || e.key === 'Backspace' || e.keyCode === 27 || e.keyCode === 4 || e.keyCode === 10009) {
+        e.preventDefault();
+        autoNextCancel();
+      } else if (/^Arrow/.test(e.key) || [19, 20, 21, 22].includes(e.keyCode)) {
+        e.preventDefault();
+        const bs = [...screen.querySelectorAll('.autonext button')];
+        const i = bs.indexOf(document.activeElement);
+        bs[(i + 1) % bs.length]?.focus();
+      }
+      return;
+    }
 
     // Si el modal de servidores está abierto, dejar que el modal gestione el D-Pad
     if (isPickerOpen) {
@@ -216,7 +259,11 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   }
   refreshNavBtns();
 
-  topbar.append(backBtn, title, prevBtn, nextBtn, pickServerBtn);
+  // Idioma (SUB / DUB): solo visible si el episodio ofrece ambos
+  const langBtn = btn(`Idioma: ${lang}`, () => switchLang(), { cls: 'ghost', ic: 'refresh', title: 'Cambiar entre subtitulado y doblado' });
+  langBtn.style.display = 'none';
+
+  topbar.append(backBtn, title, prevBtn, nextBtn, langBtn, pickServerBtn);
   screen.append(topbar);
 
   // Zona de reproducción (100% de la pantalla)
@@ -229,6 +276,8 @@ export function renderPlayer(svc, slug, epNum, navigate) {
 
   async function init() {
     svc.anime.getAnimeInfo(slug).then((info) => {
+      if (info.title) animeTitle = info.title;
+      if (info.cover) animeCover = info.cover;
       epNums = (info.episodes || []).map((e) => Number(e.num)).sort((a, b) => a - b);
       refreshNavBtns();
     }).catch(() => {});
@@ -245,6 +294,17 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     allServers = sources.servers || [];
     title.textContent = `Episodio ${epNum}`;
 
+    try { settings = await svc.settings.get(); } catch { /* usar valores por defecto */ }
+    const langs = [...new Set(allServers.map((s) => s.lang || 'SUB'))];
+    if (langs.includes(settings.lang)) {
+      lang = settings.lang;
+    } else if (langs.length) {
+      lang = langs[0];
+      toast(settings.lang === 'DUB' ? 'Este episodio no tiene doblaje: mostrando subtitulado' : 'Este episodio solo está doblado');
+    }
+    if (langs.length > 1) langBtn.style.display = '';
+    refreshLangBtn();
+
     if (!allServers.length) {
       wrap.innerHTML = '';
       wrap.append(h('div', { class: 'empty' },
@@ -255,14 +315,62 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       return;
     }
 
-    // Prioridad por defecto: MP4Upload siempre primero
-    const mp4Server = allServers.find((s) => (s.label || '').toLowerCase().includes('mp4upload'));
-    const defaultServer = mp4Server || allServers[0];
+    // Reanudar donde se quedó (si no estaba terminado)
+    try {
+      const prev = await svc.history.get(slug, curEp);
+      if (prev && prev.progress < 0.9 && prev.position > 5) {
+        resumeAt = prev.position;
+        toast(`Reanudando en ${_fmt(prev.position)}`);
+      }
+      // Registrar apertura SIN tocar el progreso existente
+      await svc.history.save({ slug, epNum: curEp, title: animeTitle, cover: animeCover, epName: `Episodio ${epNum}` });
+    } catch { /* el historial no debe impedir reproducir */ }
 
-    playServer(defaultServer);
+    playServer(pickServer());
+  }
 
-    // Guarda en historial
-    await svc.history.save({ slug, epNum: Number(epNum), title: slug, epName: `Episodio ${epNum}`, progress: 0.01 });
+  const langServers = () => allServers.filter((s) => (s.lang || 'SUB') === lang);
+
+  // Servidor a usar: el que el usuario eligió para este anime > el preferido en Ajustes > el primero
+  function pickServer() {
+    const list = langServers();
+    const find = (name) => name && list.find((s) => (s.label || '').toLowerCase().includes(name.toLowerCase()));
+    return find(settings.serverBySlug?.[slug]) || find(settings.server) || list[0] || allServers[0];
+  }
+
+  function refreshLangBtn() {
+    langBtn.querySelector('span').textContent = `Idioma: ${lang === 'DUB' ? 'Doblado' : 'Subtitulado'}`;
+  }
+
+  function switchLang() {
+    const langs = [...new Set(allServers.map((s) => s.lang || 'SUB'))];
+    if (langs.length < 2) return;
+    lang = langs[(langs.indexOf(lang) + 1) % langs.length];
+    refreshLangBtn();
+    toast(lang === 'DUB' ? 'Cambiando a doblado…' : 'Cambiando a subtitulado…');
+    playServer(pickServer()); // conserva el minuto actual (resumeAt)
+  }
+
+  // Cuenta atrás cancelable antes de pasar al siguiente episodio
+  function startAutoNext(n) {
+    if (autoNextCancel) return;
+    let left = 5;
+    const count = h('div', { class: 'autonext-count' }, `Comienza en ${left} s`);
+    const go = btn('Reproducir ahora', () => { autoNextCancel?.(); goEpisode(n); }, { cls: 'primary', ic: 'play' });
+    const cancel = btn('Cancelar', () => autoNextCancel?.(), { cls: 'ghost' });
+    const box = h('div', { class: 'autonext' },
+      h('div', { class: 'autonext-title' }, `Siguiente: episodio ${n}`),
+      count,
+      h('div', { class: 'autonext-actions' }, go, cancel),
+    );
+    screen.append(box);
+    go.focus();
+    const timer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) { autoNextCancel?.(); goEpisode(n); return; }
+      count.textContent = `Comienza en ${left} s`;
+    }, 1000);
+    autoNextCancel = () => { clearInterval(timer); box.remove(); autoNextCancel = null; };
   }
 
   let playToken = 0;
@@ -270,6 +378,9 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   async function playServer(srv) {
     const token = ++playToken;
     const original = srv; // para marcar fallos / servidor activo en el selector
+    // Al cambiar de servidor, continuar desde donde iba
+    if (activeVideo && activeVideo.currentTime > 5) resumeAt = activeVideo.currentTime;
+    savedEnded = false;
     _destroyHls();
     activeVideo = null;
     currentServer = srv;
@@ -314,11 +425,24 @@ export function renderPlayer(svc, slug, epNum, navigate) {
         video.play().catch(() => {});
       }
 
-      video.addEventListener('pause', () => _saveProgress(video));
+      video.addEventListener('loadedmetadata', () => {
+        if (resumeAt > 0 && resumeAt < video.duration - 10) {
+          try { video.currentTime = resumeAt; } catch { /* ignorar */ }
+        }
+        resumeAt = 0;
+      }, { once: true });
+      video.addEventListener('pause', saveNow);
+      video.addEventListener('timeupdate', () => {
+        if (Date.now() - lastSaveAt > 10000) saveNow();
+      });
       video.addEventListener('ended', () => {
-        _saveProgress(video, 1);
+        savedEnded = true;
+        svc.history.save({
+          slug, epNum: curEp, title: animeTitle, cover: animeCover, epName: `Episodio ${epNum}`,
+          progress: 1, position: 0, duration: video.duration || 0,
+        }).catch(() => {});
         const n = nextEp();
-        if (n != null) { toast(`Siguiente: episodio ${n}`); setTimeout(() => goEpisode(n), 1500); }
+        if (n != null && settings.autoNext !== false) startAutoNext(n);
       });
       return;
     }
@@ -425,7 +549,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     const list = h('div', { class: 'server-picker-grid' });
     let firstFocusTarget = null;
 
-    allServers.forEach((srv) => {
+    langServers().forEach((srv) => {
       const isCurrent = currentServer?.url === srv.url;
       const isFailed = failedServers.has(srv.url);
 
@@ -436,6 +560,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
         onclick: () => {
           _closeServerPicker();
           toast(`Cargando ${srv.label}…`);
+          svc.settings.rememberServer(slug, srv.label).then((st) => { settings = st; }).catch(() => {});
           playServer(srv);
         },
       },
@@ -502,11 +627,6 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     }, 80);
   }
 
-  async function _saveProgress(video, forceProgress) {
-    const progress = forceProgress ?? (video.duration ? video.currentTime / video.duration : 0);
-    await svc.history.save({ slug, epNum: Number(epNum), title: slug, epName: `Episodio ${epNum}`, progress });
-  }
-
   init();
   return screen;
 }
@@ -516,4 +636,14 @@ function _destroyHls() {
     hlsInstance.destroy();
     hlsInstance = null;
   }
+}
+
+function _humanize(slug = '') {
+  return slug.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function _fmt(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
