@@ -97,11 +97,9 @@ export function initTVNavigation(navigate) {
     }
   });
 
-  // 2. Auto-scroll suave SOLO para navegación con D-Pad / teclado cuando un elemento recibe el foco
+  // 2. Auto-scroll instantáneo SOLO para navegación con D-Pad / teclado cuando un elemento recibe el foco
   document.addEventListener('focusin', (e) => {
-    // Si la interacción es con mouse o touch, NUNCA scrollear en focusin:
-    // hacer scroll durante el clic desplaza el elemento mientras el botón del ratón
-    // sigue presionado, cancelando el clic o desviándolo hacia el siguiente elemento.
+    // Si la interacción es con mouse o touch, NUNCA scrollear en focusin
     if (isPointerInteraction) return;
 
     const el = e.target;
@@ -110,7 +108,7 @@ export function initTVNavigation(navigate) {
     // Solo scrollear si está en el contenedor de vista o modal
     if (el.closest('#view') || el.closest('.sheet') || el.closest('.server-picker-modal')) {
       el.scrollIntoView({
-        behavior: 'smooth',
+        behavior: 'auto', // Auto/instantáneo: evita el lag de animaciones smooth en TV
         block: 'nearest',
         inline: 'nearest',
       });
@@ -134,21 +132,92 @@ export function focusInitialTVElement() {
     if (firstTarget) {
       firstTarget.focus({ preventScroll: true });
     }
-  }, 120);
+  }, 100);
 }
 
-// Algoritmo de Navegación Espacial Geométrica para D-Pad
+// Algoritmo de Navegación D-Pad de Alta Velocidad (Optimizada para Smart TVs)
 function _moveFocus(direction) {
   const current = document.activeElement;
+
+  // 1. Navegación directa en el menú superior
+  if (current?.closest('#topbar-nav')) {
+    const navBtns = [...document.querySelectorAll('#topbar-nav .nav-btn')];
+    const idx = navBtns.indexOf(current);
+    if (idx !== -1) {
+      if (direction === 'left' && idx > 0) {
+        navBtns[idx - 1].focus();
+        return;
+      }
+      if (direction === 'right' && idx < navBtns.length - 1) {
+        navBtns[idx + 1].focus();
+        return;
+      }
+      if (direction === 'down') {
+        const first = document.querySelector('#view .anime-card, #view .ep-item, #view .btn, #view input');
+        if (first) {
+          first.focus();
+          return;
+        }
+      }
+    }
+  }
+
+  // 2. Navegación directa en cuadrículas (anime-grid o episodes-grid) - Cero lag, O(1)
+  const grid = current?.closest('.anime-grid, .episodes-grid, .server-picker-grid');
+  if (grid) {
+    const items = [...grid.children].filter((el) =>
+      el.getAttribute('tabindex') === '0' || el.tagName === 'BUTTON' || el.classList.contains('anime-card')
+    );
+    const idx = items.indexOf(current);
+    if (idx !== -1 && items.length > 0) {
+      // Calcular número de columnas de forma ultrarrápida
+      let cols = 1;
+      const firstTop = items[0].offsetTop;
+      while (cols < items.length && items[cols].offsetTop === firstTop) {
+        cols++;
+      }
+
+      if (direction === 'left') {
+        if (idx > 0) {
+          items[idx - 1].focus();
+          return;
+        }
+      } else if (direction === 'right') {
+        if (idx < items.length - 1) {
+          items[idx + 1].focus();
+          return;
+        }
+      } else if (direction === 'down') {
+        if (idx + cols < items.length) {
+          items[idx + cols].focus();
+          return;
+        } else if (idx < items.length - 1) {
+          items[items.length - 1].focus();
+          return;
+        }
+      } else if (direction === 'up') {
+        if (idx - cols >= 0) {
+          items[idx - cols].focus();
+          return;
+        } else {
+          // Si está en la primera fila, subir al nav superior o acciones previas
+          const topTarget = document.querySelector('.detail-actions .btn, #topbar-nav .nav-btn.active, #topbar-nav .nav-btn');
+          if (topTarget) {
+            topTarget.focus();
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Fallback espacial geométrico para otros elementos
   const focusables = [...document.querySelectorAll(FOCUSABLE_SELECTOR)].filter((el) => {
-    // Solo elementos visibles y con dimensiones
-    const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+    return el.offsetWidth > 0 && el.offsetHeight > 0;
   });
 
   if (!focusables.length) return;
 
-  // Si no hay elemento enfocado, enfocar el primero
   if (!current || current === document.body || !focusables.includes(current)) {
     focusables[0].focus();
     return;
@@ -175,29 +244,28 @@ function _moveFocus(direction) {
     const dx = candCenter.x - curCenter.x;
     const dy = candCenter.y - curCenter.y;
 
-    // Filtrar candidatos estrictamente en la dirección deseada
     let isValidDir = false;
     let primaryDist = 0;
     let secondaryDist = 0;
 
     switch (direction) {
       case 'up':
-        isValidDir = dy < -8; // Arriba
+        isValidDir = dy < -6;
         primaryDist = Math.abs(dy);
         secondaryDist = Math.abs(dx);
         break;
       case 'down':
-        isValidDir = dy > 8; // Abajo
+        isValidDir = dy > 6;
         primaryDist = Math.abs(dy);
         secondaryDist = Math.abs(dx);
         break;
       case 'left':
-        isValidDir = dx < -8; // Izquierda
+        isValidDir = dx < -6;
         primaryDist = Math.abs(dx);
         secondaryDist = Math.abs(dy);
         break;
       case 'right':
-        isValidDir = dx > 8; // Derecha
+        isValidDir = dx > 6;
         primaryDist = Math.abs(dx);
         secondaryDist = Math.abs(dy);
         break;
@@ -205,9 +273,7 @@ function _moveFocus(direction) {
 
     if (!isValidDir) continue;
 
-    // Ponderación de distancia: penalizar desviaciones ortogonales (alineación preferida)
     const distance = primaryDist + secondaryDist * 2.2;
-
     if (distance < minDistance) {
       minDistance = distance;
       bestCandidate = candidate;

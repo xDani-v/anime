@@ -85,6 +85,7 @@ export function renderDetail(svc, slug, navigate) {
     const epSection = h('div', { class: 'episodes-list' });
     epSection.append(h('h2', null, `${anime.episodes.length} episodios`));
 
+    const epGrid = h('div', { class: 'episodes-grid' });
     for (const ep of anime.episodes) {
       const num = ep.num ?? epNumFromUrl(ep.url);
       const isWatched = watched.has(num);
@@ -103,8 +104,9 @@ export function renderDetail(svc, slug, navigate) {
         ),
         h('span', { class: 'ep-arrow' }, '›'),
       );
-      epSection.append(item);
+      epGrid.append(item);
     }
+    epSection.append(epGrid);
     root.append(epSection);
   }
 

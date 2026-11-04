@@ -38,12 +38,17 @@ if (!content.includes('android:usesCleartextTraffic')) {
   content = content.replace('<application', '<application android:usesCleartextTraffic="true"');
 }
 
-// 4. Banner para la cuadrícula de inicio de Android TV
+// 4. Aceleración por hardware para fluidez 60 FPS en Android TV
+if (!content.includes('android:hardwareAccelerated')) {
+  content = content.replace('<application', '<application android:hardwareAccelerated="true"');
+}
+
+// 5. Banner para la cuadrícula de inicio de Android TV
 if (!content.includes('android:banner=')) {
   content = content.replace('<application', '<application android:banner="@mipmap/ic_launcher"');
 }
 
-// 5. Añadir categoría LEANBACK_LAUNCHER a MainActivity para que aparezca en el menú de la TV
+// 6. Añadir categoría LEANBACK_LAUNCHER a MainActivity para que aparezca en el menú de la TV
 const leanbackCategory = `
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
