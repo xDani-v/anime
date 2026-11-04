@@ -61,3 +61,28 @@ if (!content.includes('LEANBACK_LAUNCHER')) {
 
 fs.writeFileSync(manifestPath, content, 'utf8');
 console.log('✓ AndroidManifest.xml configurado exitosamente para Android TV + Mobile + Network.');
+
+// 7. Configurar MainActivity.java para autoplay de video sin requerir gestos táctiles
+const activityPath = path.resolve('android/app/src/main/java/com/animeav1/app/MainActivity.java');
+if (fs.existsSync(activityPath)) {
+  let actContent = fs.readFileSync(activityPath, 'utf8');
+  if (!actContent.includes('setMediaPlaybackRequiresUserGesture')) {
+    actContent = actContent.replace(
+      'public class MainActivity extends BridgeActivity {',
+      `public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(android.os.Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        try {
+            android.webkit.WebView webView = this.bridge.getWebView();
+            android.webkit.WebSettings settings = webView.getSettings();
+            settings.setMediaPlaybackRequiresUserGesture(false);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }`
+    );
+    fs.writeFileSync(activityPath, actContent, 'utf8');
+    console.log('✓ MainActivity.java configurado para autoplay de video sin gestos táctiles.');
+  }
+}

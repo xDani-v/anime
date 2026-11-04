@@ -101,20 +101,25 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       return;
     }
 
-    if (!activeVideo) return;
-
-    if (e.key === ' ' || e.key === 'MediaPlayPause') {
-      e.preventDefault();
-      if (activeVideo.paused) activeVideo.play();
-      else activeVideo.pause();
-    } else if (e.key === 'ArrowLeft' || e.key === 'MediaRewind') {
-      e.preventDefault();
-      activeVideo.currentTime = Math.max(0, activeVideo.currentTime - 10);
-      toast('-10s');
-    } else if (e.key === 'ArrowRight' || e.key === 'MediaFastForward') {
-      e.preventDefault();
-      activeVideo.currentTime = Math.min(activeVideo.duration || 999999, activeVideo.currentTime + 10);
-      toast('+10s');
+    if (activeVideo) {
+      if (e.key === ' ' || e.key === 'MediaPlayPause' || e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 23) {
+        e.preventDefault();
+        if (activeVideo.paused) {
+          activeVideo.play();
+          toast('▶ Reproduciendo');
+        } else {
+          activeVideo.pause();
+          toast('⏸ Pausa');
+        }
+      } else if (e.key === 'ArrowLeft' || e.key === 'MediaRewind') {
+        e.preventDefault();
+        activeVideo.currentTime = Math.max(0, activeVideo.currentTime - 10);
+        toast('-10s');
+      } else if (e.key === 'ArrowRight' || e.key === 'MediaFastForward') {
+        e.preventDefault();
+        activeVideo.currentTime = Math.min(activeVideo.duration || 999999, activeVideo.currentTime + 10);
+        toast('+10s');
+      }
     }
   }
   window.addEventListener('keydown', handleKey);
@@ -173,7 +178,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     await svc.history.save({ slug, epNum: Number(epNum), title: slug, epName: `Episodio ${epNum}`, progress: 0.01 });
   }
 
-  function playServer(srv) {
+  async function playServer(srv) {
     _destroyHls();
     activeVideo = null;
     currentServer = srv;
@@ -182,47 +187,78 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     title.textContent = `Episodio ${epNum} — ${srv.label}`;
     showHUD();
 
-    if (srv.type === 'iframe') {
-      // Iframe blindado contra publicidad y popups
-      const frame = h('iframe', {
-        class: 'player-frame',
-        src: srv.url,
-        sandbox: 'allow-scripts allow-same-origin allow-forms',
-        allow: 'autoplay; fullscreen; encrypted-media; picture-in-picture',
-        allowfullscreen: true,
-        referrerpolicy: 'no-referrer',
+    let resolvedSrv = srv;
+
+    // Si es MP4Upload y aún no tenemos la URL directa del MP4, extraerla para reproducción nativa con control remoto
+    if (srv.url.includes('mp4upload.com') && srv.type !== 'video') {
+      try {
+        wrap.append(loading());
+        const res = await fetch(srv.url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        const html = await res.text();
+        const m = html.match(/player\.src\(\{\s*type:\s*["']video\/mp4["'],\s*src:\s*["']([^"']+)["']/i) ||
+                  html.match(/src:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i);
+        if (m && m[1]) {
+          resolvedSrv = { ...srv, url: m[1], type: 'video' };
+        }
+      } catch (e) {
+        console.warn('Fallback a iframe en MP4Upload:', e);
+      }
+      wrap.innerHTML = '';
+    }
+
+    // 1. Video directo nativo (MP4 directo o HLS .m3u8)
+    if (resolvedSrv.type === 'video' || resolvedSrv.url.includes('.m3u8') || resolvedSrv.url.includes('.mp4')) {
+      const video = h('video', {
+        controls: true,
+        autoplay: true,
+        playsinline: true,
+        style: 'width:100%;height:100%;background:#000',
+      });
+      activeVideo = video;
+      wrap.append(video);
+      requestWake();
+
+      video.addEventListener('error', () => {
+        _handleFailure(srv);
       });
 
-      frame.onerror = () => _handleFailure(srv);
-      wrap.append(frame);
-      requestWake();
+      if (resolvedSrv.url.includes('.m3u8')) {
+        _playHls(video, resolvedSrv.url, srv);
+      } else {
+        video.src = resolvedSrv.url;
+        video.play().catch(() => {});
+      }
+
+      video.addEventListener('pause', () => _saveProgress(video));
+      video.addEventListener('ended', () => _saveProgress(video, 1));
       return;
     }
 
-    // Video directo (MP4 o M3U8)
-    const video = h('video', {
-      controls: true,
-      autoplay: true,
-      playsinline: true,
-      style: 'width:100%;height:100%;background:#000',
-    });
-    activeVideo = video;
-    wrap.append(video);
-    requestWake();
-
-    video.addEventListener('error', () => {
-      _handleFailure(srv);
-    });
-
-    if (srv.url.includes('.m3u8')) {
-      _playHls(video, srv.url, srv);
-    } else {
-      video.src = srv.url;
-      video.play().catch(() => {});
+    // 2. Servidores web embebidos (Iframe)
+    let embedUrl = resolvedSrv.url;
+    if (!embedUrl.includes('autoplay=')) {
+      embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'autoplay=1&autostart=true';
     }
 
-    video.addEventListener('pause', () => _saveProgress(video));
-    video.addEventListener('ended', () => _saveProgress(video, 1));
+    const frame = h('iframe', {
+      class: 'player-frame',
+      src: embedUrl,
+      sandbox: 'allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock',
+      allow: 'autoplay *; fullscreen *; encrypted-media *; picture-in-picture *',
+      allowfullscreen: true,
+      referrerpolicy: 'no-referrer',
+      tabindex: '0',
+    });
+
+    frame.onload = () => {
+      try { frame.focus(); } catch {}
+    };
+    frame.onerror = () => _handleFailure(srv);
+    wrap.append(frame);
+    requestWake();
+    setTimeout(() => { try { frame.focus(); } catch {} }, 150);
   }
 
   async function _playHls(video, src, srv) {

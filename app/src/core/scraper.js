@@ -245,6 +245,17 @@ export async function getEpisodeSources(slug, epNum) {
     if (/mega\.nz|1fichier|mediafire|drive\.google/i.test(srcUrl)) continue;
 
     if (!servers.some((s) => s.url === srcUrl)) {
+      // Detección directa de stream nativo HLS de Zilla Networks (.m3u8 directo sin publicidad ni iframe)
+      const zillaMatch = srcUrl.match(/player\.zilla-networks\.com\/play\/([a-zA-Z0-9]+)/);
+      if (zillaMatch) {
+        servers.push({
+          label: 'HLS Directo (FHD)',
+          url: `https://player.zilla-networks.com/m3u8/${zillaMatch[1]}`,
+          type: 'video',
+        });
+        continue;
+      }
+
       const type = srcUrl.includes('.m3u8') ? 'video' : 'iframe';
       servers.push({ label: _labelFromServer(label, srcUrl), url: srcUrl, type });
     }
