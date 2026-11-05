@@ -32,8 +32,11 @@ jobs:
         run: |
           cd app && zip -r ../bundle.zip . && cd ..
           VERSION_SHORT="${GITHUB_SHA::7}"
-          echo "{\"version\":\"${VERSION_SHORT}\",\"url\":\"https://github.com/${{ github.repository }}/releases/download/latest/bundle.zip\"}" > version.json
-          echo "Versión OTA generada: ${VERSION_SHORT}"
+          # El plugin capacitor-updater exige el SHA-256 (hex, minúsculas) del zip para aceptar la descarga
+          CHECKSUM="$(sha256sum bundle.zip | cut -d' ' -f1)"
+          echo "{\"version\":\"${VERSION_SHORT}\",\"url\":\"https://github.com/${{ github.repository }}/releases/download/latest/bundle.zip\",\"checksum\":\"${CHECKSUM}\"}" > version.json
+          echo "Versión OTA generada: ${VERSION_SHORT} (sha256 ${CHECKSUM})"
+          cat version.json
       - run: npx cap add android
       - name: Iconos del launcher (desde assets/)
         run: npx capacitor-assets generate --android

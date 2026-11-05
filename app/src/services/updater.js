@@ -5,7 +5,8 @@
 // Flujo (plugin @capgo/capacitor-updater en modo manual):
 //   1. current()  -> versión del bundle activo (bundle.version; el id es un valor aleatorio del plugin)
 //   2. fetch version.json del release "latest" de GitHub  -> { version, url }
-//   3. si version != la activa: download({ url, version }) devuelve un BundleInfo con su PROPIO id
+//   3. si version != la activa: download({ url, version, checksum }) devuelve un BundleInfo con su PROPIO id
+//      (checksum = SHA-256 del zip, obligatorio en el plugin; lo publica el workflow en version.json)
 //   4. set({ id: bundle.id }) activa ese bundle y recarga la app
 // Cada comprobación deja su resultado en localStorage para mostrarlo en Ajustes (diagnóstico en la TV).
 
@@ -33,6 +34,23 @@ function record(status) {
 /** Último resultado de comprobación guardado (o null). */
 export function lastOtaStatus() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** La descarga puede fallar un instante si GitHub está reemplazando el archivo o la red parpadea: reintentar. */
+async function downloadWithRetry(Updater, opts, tries = 3) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await Updater.download(opts);
+    } catch (e) {
+      last = e;
+      console.warn(`[OTA] Descarga fallida (intento ${i + 1}/${tries}):`, e?.message || e);
+      if (i < tries - 1) await sleep(2000 * (i + 1));
+    }
+  }
+  throw last;
 }
 
 function getUpdater() {
@@ -87,6 +105,7 @@ export async function checkForUpdate(toast) {
     const data = await res.json();
     const remote = data.version;
     if (!remote || !data.url) return record({ state: 'error', current, detail: 'version.json no tiene "version" o "url".' });
+    if (!data.checksum) return record({ state: 'error', current, remote, detail: 'version.json no trae "checksum" (SHA-256 del bundle): el plugin lo exige para descargar.' });
 
     if (!shouldUpdate(current, remote)) {
       console.log(`[OTA] AnimeAV1 al día (versión ${current})`);
@@ -103,7 +122,7 @@ export async function checkForUpdate(toast) {
       bundle = (bundles || []).find((b) => b.version === remote && b.status !== 'error') || null;
     } catch { /* si list() no está disponible, se descarga */ }
 
-    if (!bundle) bundle = await Updater.download({ url: data.url, version: remote });
+    if (!bundle) bundle = await downloadWithRetry(Updater, { url: data.url, version: remote, checksum: data.checksum });
     if (!bundle?.id) return record({ state: 'error', current, remote, detail: 'La descarga no devolvió un bundle válido.' });
 
     record({ state: 'updated', current, remote, detail: `Actualizando a ${remote}…` });
