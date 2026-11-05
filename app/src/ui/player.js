@@ -4,6 +4,7 @@
 
 import { h, btn, iconBtn, loading, toast } from './dom.js';
 import { resolveDirectSource } from '../core/scraper.js';
+import { fmtTime, seekStep, seekTarget, showSkipIntro, INTRO_SKIP_SECONDS } from './seek.js';
 
 let hlsInstance = null; // instancia activa de Hls.js
 
@@ -29,6 +30,10 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   let allServers = [];
   let lang = 'SUB';              // idioma activo (SUB / DUB)
   let settings = { autoNext: true };
+  let pendingSeek = null;        // destino de un avance aún no aplicado (se aplica al dejar de pulsar)
+  let seekTimer = null;
+  let rapid = 0, lastSeekKey = 0, lastInc = 0;
+  let introUsed = false;
   let autoNextCancel = null;     // función que cancela la cuenta atrás de 'siguiente episodio'
   let currentServer = null;
   const failedServers = new Set();
@@ -51,6 +56,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   }
 
   const teardown = () => {
+    clearTimeout(seekTimer);
     autoNextCancel?.();
     saveNow();
     window.removeEventListener('pagehide', saveNow);
@@ -58,6 +64,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     clearTimeout(hudTimer);
     window.removeEventListener('keydown', handleKey);
     window.removeEventListener('close-server-picker', _closeServerPicker);
+    window.removeEventListener('popstate', onPop);
     screen.removeEventListener('mousemove', onUserActivity);
     screen.removeEventListener('touchstart', onUserActivity);
     releaseWake();
@@ -66,10 +73,17 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     screen.remove();
   };
 
+  // Volver a la pantalla desde la que se abrió el reproductor (detalle, Inicio...) o, si se
+  // abrió con un enlace directo, a la ficha del anime
   const closePlayer = () => {
     teardown();
-    navigate(`/anime/${slug}`);
+    if (navigate.back) navigate.back(`/anime/${slug}`);
+    else navigate(`/anime/${slug}`);
   };
+
+  // Atrás del navegador / gesto del sistema con el reproductor abierto: cerrarlo limpiamente
+  function onPop() { teardown(); }
+  window.addEventListener('popstate', onPop);
 
   // ---- Progreso / historial ----
   let animeTitle = _humanize(slug);
@@ -108,7 +122,9 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   function goEpisode(n) {
     if (n == null) { toast('No hay más episodios'); return; }
     teardown();
-    navigate(`/watch/${slug}/${n}`);
+    // replace: cambiar de episodio no apila pantallas (Atrás vuelve a donde estabas)
+    if (navigate.replace) navigate.replace(`/watch/${slug}/${n}`);
+    else navigate(`/watch/${slug}/${n}`);
   }
 
   window.addEventListener('close-server-picker', _closeServerPicker);
@@ -116,14 +132,93 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   // Auto-ocultamiento de la barra superior (HUD) para pantalla 100% limpia
   function showHUD() {
     topbar.classList.remove('hud-hidden');
+    osd.classList.remove('hud-hidden');
     clearTimeout(hudTimer);
     if (!isPickerOpen) {
       hudTimer = setTimeout(() => {
-        // No ocultar la barra mientras el usuario navega por ella con el D-Pad
+        // No ocultar mientras el usuario navega por la barra con el D-Pad. En pausa SÍ se oculta:
+        // los subtítulos van grabados en el video y la barra los taparía.
         if (topbar.contains(document.activeElement)) { showHUD(); return; }
         topbar.classList.add('hud-hidden');
+        osd.classList.add('hud-hidden');
       }, 3500);
     }
+  }
+
+  // ---- Barra de progreso (OSD) ----
+  function updateOsd() {
+    const v = activeVideo;
+    const dur = v && Number.isFinite(v.duration) ? v.duration : 0;
+    const cur = pendingSeek ?? (v ? v.currentTime : 0);
+    const pct = dur ? Math.min(100, (cur / dur) * 100) : 0;
+    osdFill.style.width = `${pct}%`;
+    osdThumb.style.left = `${pct}%`;
+    let buf = 0;
+    try { if (v && v.buffered.length) buf = v.buffered.end(v.buffered.length - 1); } catch { /* ignorar */ }
+    osdBuf.style.width = `${dur ? Math.min(100, (buf / dur) * 100) : 0}%`;
+    osdCur.textContent = fmtTime(cur);
+    osdDur.textContent = fmtTime(dur);
+    osdState.textContent = v?.paused ? '⏸ Pausa' : '▶';
+    pauseBadge.classList.toggle('show', !!v?.paused);
+    osd.classList.toggle('seeking', pendingSeek != null);
+
+    const showSkip = !!v && showSkipIntro(v.currentTime, dur, introUsed);
+    if (showSkip !== (skipBtn.style.display !== 'none')) {
+      skipBtn.style.display = showSkip ? '' : 'none';
+      if (!showSkip && document.activeElement === skipBtn) skipBtn.blur();
+    }
+  }
+
+  function showDelta(text) {
+    osdDelta.textContent = text;
+    osdDelta.classList.add('show');
+    clearTimeout(showDelta.t);
+    showDelta.t = setTimeout(() => osdDelta.classList.remove('show'), 700);
+  }
+
+  // Avance/retroceso con aceleración: pulsaciones seguidas suben de 10 s a 30 s y a 60 s.
+  // El salto real se aplica al soltar (evita peticiones de red en cada pulsación).
+  function seekBy(dir) {
+    const v = activeVideo;
+    if (!v || !Number.isFinite(v.duration)) return;
+    const now = Date.now();
+    if (now - lastSeekKey < 450) {
+      if (now - lastInc > 150) { rapid++; lastInc = now; }
+    } else {
+      rapid = 0;
+    }
+    lastSeekKey = now;
+    const step = seekStep(rapid);
+    pendingSeek = seekTarget(pendingSeek ?? v.currentTime, dir, step, v.duration);
+    showDelta(`${dir > 0 ? '+' : '−'}${step} s`);
+    updateOsd();
+    clearTimeout(seekTimer);
+    seekTimer = setTimeout(commitSeek, 400);
+  }
+
+  function commitSeek() {
+    if (pendingSeek != null && activeVideo) {
+      try { activeVideo.currentTime = pendingSeek; } catch { /* ignorar */ }
+    }
+    pendingSeek = null;
+    updateOsd();
+  }
+
+  function skipIntro() {
+    const v = activeVideo;
+    if (!v) return;
+    introUsed = true;
+    v.currentTime = seekTarget(v.currentTime, 1, INTRO_SKIP_SECONDS, v.duration);
+    skipBtn.blur();
+    updateOsd();
+    toast('Intro saltada');
+  }
+
+  function togglePlay() {
+    const v = activeVideo;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {}); else v.pause();
+    updateOsd();
   }
 
   function onUserActivity() {
@@ -166,6 +261,20 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       return;
     }
 
+    // Botón "Saltar intro" enfocado: Abajo vuelve al video, Arriba sube a la barra, OK lo activa
+    if (document.activeElement === skipBtn) {
+      if (e.key === 'ArrowDown' || e.keyCode === 20) {
+        e.preventDefault();
+        skipBtn.blur();
+      } else if (e.key === 'ArrowUp' || e.keyCode === 19) {
+        e.preventDefault();
+        (!nextBtn.disabled ? nextBtn : topbar.querySelector('button:not([disabled])'))?.focus();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.keyCode === 21 || e.keyCode === 22) {
+        e.preventDefault();
+      }
+      return; // Enter / OK: actúa el botón enfocado
+    }
+
     // Navegación dentro de la barra superior (Anterior / Siguiente / Servidor)
     if (topbar.contains(document.activeElement)) {
       const btns = [...topbar.querySelectorAll('button:not([disabled])')];
@@ -189,6 +298,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     if (e.key === 'ArrowUp' || e.keyCode === 19) {
       e.preventDefault();
       topbar.classList.remove('hud-hidden');
+      if (skipBtn.style.display !== 'none') { skipBtn.focus(); showHUD(); return; }
       (!nextBtn.disabled ? nextBtn : topbar.querySelector('button:not([disabled])'))?.focus();
       showHUD();
       return;
@@ -216,21 +326,13 @@ export function renderPlayer(svc, slug, epNum, navigate) {
     if (activeVideo) {
       if (e.key === ' ' || e.key === 'MediaPlayPause' || e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 23) {
         e.preventDefault();
-        if (activeVideo.paused) {
-          activeVideo.play();
-          toast('▶ Reproduciendo');
-        } else {
-          activeVideo.pause();
-          toast('⏸ Pausa');
-        }
-      } else if (e.key === 'ArrowLeft' || e.key === 'MediaRewind') {
+        togglePlay();
+      } else if (e.key === 'ArrowLeft' || e.key === 'MediaRewind' || e.keyCode === 21) {
         e.preventDefault();
-        activeVideo.currentTime = Math.max(0, activeVideo.currentTime - 10);
-        toast('-10s');
-      } else if (e.key === 'ArrowRight' || e.key === 'MediaFastForward') {
+        seekBy(-1);
+      } else if (e.key === 'ArrowRight' || e.key === 'MediaFastForward' || e.keyCode === 22) {
         e.preventDefault();
-        activeVideo.currentTime = Math.min(activeVideo.duration || 999999, activeVideo.currentTime + 10);
-        toast('+10s');
+        seekBy(1);
       }
     } else {
       const frame = wrap.querySelector('iframe');
@@ -270,6 +372,34 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   const wrap = h('div', { class: 'player-wrap' });
   wrap.append(loading());
   screen.append(wrap);
+
+  // Barra de progreso inferior (OSD) y botón "Saltar intro"
+  const osdFill  = h('div', { class: 'osd-fill' });
+  const osdBuf   = h('div', { class: 'osd-buf' });
+  const osdThumb = h('div', { class: 'osd-thumb' });
+  const osdDelta = h('div', { class: 'osd-delta' });
+  const osdCur   = h('span', null, '0:00');
+  const osdDur   = h('span', null, '0:00');
+  const osdState = h('span', { class: 'osd-state' }, '▶');
+  const osdTrack = h('div', {
+    class: 'osd-track',
+    onclick: (e) => {                       // táctil / ratón: tocar la barra para saltar
+      const v = activeVideo;
+      if (!v || !Number.isFinite(v.duration)) return;
+      const r = osdTrack.getBoundingClientRect();
+      v.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * v.duration;
+      updateOsd();
+    },
+  }, osdBuf, osdFill, osdThumb, osdDelta);
+  const osd = h('div', { class: 'player-osd' },
+    osdTrack,
+    h('div', { class: 'osd-times' }, h('div', { class: 'osd-left' }, osdState, osdCur), osdDur),
+  );
+  const skipBtn = btn('Saltar intro', () => skipIntro(), { cls: 'primary', ic: 'next', title: `Saltar ${INTRO_SKIP_SECONDS} s` });
+  skipBtn.classList.add('skip-intro');
+  skipBtn.style.display = 'none';
+  const pauseBadge = h('div', { class: 'pause-badge' }, '⏸ Pausa');
+  screen.append(osd, pauseBadge, skipBtn);
 
   document.getElementById('app').append(screen);
   showHUD();
@@ -339,7 +469,7 @@ export function renderPlayer(svc, slug, epNum, navigate) {
   }
 
   function refreshLangBtn() {
-    langBtn.querySelector('span').textContent = `Idioma: ${lang === 'DUB' ? 'Doblado' : 'Subtitulado'}`;
+    langBtn.querySelector('span:not(.icon)').textContent = `Idioma: ${lang === 'DUB' ? 'Doblado' : 'Subtitulado'}`;
   }
 
   function switchLang() {
@@ -405,13 +535,19 @@ export function renderPlayer(svc, slug, epNum, navigate) {
 
     if (isDirectVideo) {
       const video = h('video', {
-        controls: true,
         autoplay: true,
         playsinline: true,
         style: 'width:100%;height:100%;background:#000',
       });
       activeVideo = video;
+      pendingSeek = null;
+      introUsed = false;
       wrap.append(video);
+      video.addEventListener('click', () => { togglePlay(); showHUD(); });  // táctil / ratón
+      for (const ev of ['play', 'pause', 'timeupdate', 'progress', 'loadedmetadata', 'durationchange', 'seeked']) {
+        video.addEventListener(ev, updateOsd);
+      }
+      updateOsd();
       requestWake();
 
       video.addEventListener('error', () => {

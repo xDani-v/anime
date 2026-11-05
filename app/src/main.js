@@ -12,6 +12,7 @@ import { renderSettings } from './ui/settings.js';
 import { initTVNavigation, focusInitialTVElement } from './ui/tv.js';
 import { toast } from './ui/dom.js';
 import { initOTAUpdater } from './services/updater.js';
+import { createViewStateStore, captureView, restoreView } from './ui/navstate.js';
 
 // ---------- Rutas ----------
 // /                  → home
@@ -23,12 +24,28 @@ import { initOTAUpdater } from './services/updater.js';
 
 let svc = null;
 
-function navigate(path) {
-  history.pushState(null, '', path);
+// Cada entrada del historial lleva { idx, key }: idx = profundidad dentro de la app,
+// key = identificador para recordar su scroll y foco al volver.
+const viewStates = createViewStateStore(30);
+let currentKey = null;
+const newKey = () => Math.random().toString(36).slice(2);
+
+function navigate(path, { replace = false } = {}) {
+  viewStates.set(currentKey, captureView()); // recordar dónde estaba el usuario en la pantalla que deja
+  const idx = (history.state?.idx ?? 0) + (replace ? 0 : 1);
+  currentKey = newKey();
+  history[replace ? 'replaceState' : 'pushState']({ idx, key: currentKey }, '', path);
   route(path);
 }
+// Reemplaza la entrada actual (p. ej. cambiar de episodio sin apilar pantallas)
+navigate.replace = (path) => navigate(path, { replace: true });
+// Vuelve a la pantalla anterior; si no la hay (se abrió directo), va a `fallback`
+navigate.back = (fallback = '/') => {
+  if ((history.state?.idx ?? 0) > 0) history.back();
+  else navigate(fallback, { replace: true });
+};
 
-function route(path = location.pathname + location.search) {
+function route(path = location.pathname + location.search, restore = null) {
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = '';
@@ -75,8 +92,9 @@ function route(path = location.pathname + location.search) {
     view.textContent = 'Página no encontrada';
   }
 
-  // Foco inicial automático para Smart TVs
-  focusInitialTVElement();
+  // Al volver atrás: restaurar scroll y foco; si no hay nada que restaurar, foco inicial para Smart TVs
+  if (restore) restoreView(restore, view, focusInitialTVElement);
+  else focusInitialTVElement();
 }
 
 // ---------- Nav buttons ----------
@@ -89,7 +107,11 @@ window.addEventListener('offline', () => toast('Sin conexión: mostrando datos g
 window.addEventListener('online',  () => toast('Conexión restablecida'));
 
 // ---------- Back/forward ----------
-window.addEventListener('popstate', () => route());
+window.addEventListener('popstate', () => {
+  viewStates.set(currentKey, captureView());
+  currentKey = history.state?.key ?? newKey();
+  route(undefined, viewStates.get(currentKey));
+});
 
 // ---------- Arranque ----------
 async function main() {
@@ -97,6 +119,8 @@ async function main() {
   const store = await openIdbStore();
   svc = createServices(store);
   svc.cache.prune().catch(() => {}); // limpia datos de caché muy antiguos
+  currentKey = history.state?.key ?? newKey();
+  history.replaceState({ idx: history.state?.idx ?? 0, key: currentKey }, '');
   initTVNavigation(navigate); // Inicializar navegación espacial para Smart TV
   route(); // renderiza la ruta inicial
 }

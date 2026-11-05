@@ -2,7 +2,25 @@
    AnimeAV1 — Sistema de Diseño Visual
    Paleta: Pastel & Liquid Glass | Tipografía: Inter | Iconos: Line 1.5px
    Movimiento: Fluid Motion | Experiencia: Keyboard First
+
+   Decisiones de diseño (ajustadas para Smart TV):
+   - Tema OSCURO por defecto (sala con poca luz, paneles LED); claro queda como opción futura.
+   - Desenfoque de fondo (backdrop-filter) SOLO en hojas/modales de móvil. En TV (>=1280px)
+     las superficies son casi opacas: el blur sobre video es caro en GPUs Mali.
+   - Iconos: solo trazo 1.5px. Excepción documentada: estados activos (play, corazón guardado).
+   - Tipografía: escala de 4 niveles (--fs-caption/small/body/lead + heading) que crece en TV.
+   - Contraste mínimo 4.5:1 en texto; foco visible de 3px en TV; respeta prefers-reduced-motion.
    ===================================================================== */
+
+/* ---------- Tipografía Inter (incluida en la app: funciona sin internet y llega por OTA) ---------- */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('../fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 /* ---------- Reset & Box Sizing ---------- */
 *, *::before, *::after {
@@ -49,7 +67,7 @@
   /* Jerarquía de Texto y Contraste */
   --text-primary:    #F2F5F9;
   --text-secondary:  #9CA8BA;
-  --text-muted:      #69768A;
+  --text-muted:      #8794A8; /* >= 4.5:1 sobre --bg-deep */
   --text-dark:       #0A0D14;
 
   /* 2. Jerarquía Tipográfica Inter */
@@ -74,6 +92,13 @@
   --dur-smooth:      0.4s;
 
   --topbar-height:   64px;
+
+  /* Escala de tamaños (crece en TV, ver @media >= 1280px) */
+  --fs-caption: 11px;
+  --fs-small:   13px;
+  --fs-body:    15px;
+  --fs-lead:    17px;
+  --fs-heading: 18px;
 }
 
 /* ---------- Configuración Base ---------- */
@@ -85,8 +110,8 @@ html, body {
     radial-gradient(circle at 88% 80%, rgba(216, 180, 248, 0.05) 0%, transparent 45%);
   color: var(--text-primary);
   font-family: var(--font-family);
-  font-size: 15px;
-  line-height: 22px;
+  font-size: var(--fs-body);
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -238,7 +263,7 @@ button {
   gap: 8px;
   padding: 9px 18px;
   border-radius: var(--radius-md);
-  font-size: 14px;
+  font-size: var(--fs-small);
   font-weight: 500;
   line-height: 20px;
   border: 1px solid transparent;
@@ -275,8 +300,6 @@ button {
   background: var(--glass-panel);
   color: var(--text-primary);
   border: 1px solid var(--glass-border);
-  backdrop-filter: var(--glass-blur-sm);
-  -webkit-backdrop-filter: var(--glass-blur-sm);
 }
 
 .btn.ghost:hover {
@@ -411,7 +434,7 @@ button {
   color: var(--pastel-ice);
   border: 1px solid rgba(165, 200, 228, 0.45);
   font: var(--font-caption);
-  font-size: 10px;
+  font-size: var(--fs-caption);
   padding: 2px 7px;
   border-radius: var(--radius-full);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
@@ -423,7 +446,7 @@ button {
 }
 
 .anime-card .info .title {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   line-height: 16.5px;
   color: var(--text-primary);
@@ -496,7 +519,7 @@ button {
 }
 
 .section-head a {
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 500;
   color: var(--pastel-ice);
 }
@@ -508,8 +531,6 @@ button {
   gap: 12px;
   padding: 14px 20px;
   background: var(--glass-card);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--glass-border);
 }
 
@@ -541,9 +562,7 @@ button {
   flex-wrap: wrap;
   gap: 10px;
   padding: 14px 20px;
-  background: var(--glass-card);
-  backdrop-filter: var(--glass-blur-sm);
-  -webkit-backdrop-filter: var(--glass-blur-sm);
+  background: rgba(14, 18, 27, 0.96); /* casi opaco: sin blur */
   border-bottom: 1px solid var(--glass-border);
 }
 
@@ -554,7 +573,7 @@ button {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   padding: 10px 14px;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 500;
   cursor: pointer;
   outline: none;
@@ -595,7 +614,7 @@ button {
   background: var(--glass-panel);
   border: 1px solid var(--glass-border);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
   transition: all var(--dur-normal) var(--ease-fluid);
@@ -627,7 +646,7 @@ button {
 }
 
 .pag-info {
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -708,7 +727,7 @@ button {
 
 .episodes-list h2 {
   font: var(--font-title);
-  font-size: 18px;
+  font-size: var(--fs-heading);
   margin-bottom: 14px;
   color: var(--text-primary);
 }
@@ -771,20 +790,20 @@ button {
 }
 
 .ep-item .ep-info .ep-num {
-  font-size: 14.5px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .ep-item .ep-info .ep-name {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   margin-top: 3px;
 }
 
 .ep-item .ep-arrow {
   color: var(--pastel-ice);
-  font-size: 18px;
+  font-size: var(--fs-heading);
   font-weight: 500;
 }
 
@@ -808,8 +827,6 @@ button {
   left: 0;
   right: 0;
   background: linear-gradient(180deg, rgba(8, 10, 15, 0.92) 0%, transparent 100%);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   z-index: 20;
   opacity: 1;
   transform: translateY(0);
@@ -824,7 +841,7 @@ button {
 }
 
 .player-topbar .ep-title {
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text-primary);
   flex: 1;
@@ -832,14 +849,20 @@ button {
 
 .player-wrap {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  min-height: 0;   /* sin esto el contenedor crece al tamaño del video y se sale de la pantalla (recorta subtítulos) */
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  background: #000;
 }
 
-video, iframe.player-frame {
+/* El video llena el contenedor SIN modificar su tamaño: se ve entero, con barras negras si hace falta */
+.player-wrap video, .player-wrap iframe.player-frame {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  object-fit: contain;
   border: none;
 }
 
@@ -878,12 +901,12 @@ video, iframe.player-frame {
 
 .server-picker-head h3 {
   font: var(--font-title);
-  font-size: 19px;
+  font-size: var(--fs-heading);
   color: var(--text-primary);
 }
 
 .server-picker-head .caption-sub {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--pastel-ice);
   margin-top: 3px;
   font-weight: 500;
@@ -894,7 +917,7 @@ video, iframe.player-frame {
   background: rgba(244, 194, 194, 0.12);
   border-bottom: 1px solid rgba(244, 194, 194, 0.25);
   color: var(--pastel-rose);
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 500;
 }
 
@@ -913,8 +936,6 @@ video, iframe.player-frame {
   justify-content: space-between;
   padding: 14px 18px;
   background: var(--glass-card);
-  backdrop-filter: var(--glass-blur-sm);
-  -webkit-backdrop-filter: var(--glass-blur-sm);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
@@ -965,13 +986,13 @@ video, iframe.player-frame {
 }
 
 .server-pick-name {
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .server-pick-status {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 
@@ -985,7 +1006,7 @@ video, iframe.player-frame {
 }
 
 .server-pick-icon {
-  font-size: 16px;
+  font-size: var(--fs-lead);
   color: var(--pastel-ice);
 }
 
@@ -1053,7 +1074,7 @@ video, iframe.player-frame {
 
 .sheet-head h2 {
   font: var(--font-title);
-  font-size: 18px;
+  font-size: var(--fs-heading);
   color: var(--text-primary);
 }
 
@@ -1087,13 +1108,11 @@ body.no-scroll {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  background: rgba(22, 28, 42, 0.92);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  background: rgba(22, 28, 42, 0.97);
   color: var(--text-primary);
   padding: 11px 22px;
   border-radius: var(--radius-full);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 500;
   white-space: nowrap;
   z-index: 9999;
@@ -1127,7 +1146,7 @@ body.no-scroll {
 
 .empty h3 {
   font: var(--font-title);
-  font-size: 18px;
+  font-size: var(--fs-heading);
   margin-bottom: 8px;
   color: var(--text-primary);
 }
@@ -1175,7 +1194,7 @@ body.no-scroll {
   }
   .nav-btn {
     padding: 6px 8px;
-    font-size: 10px;
+    font-size: var(--fs-caption);
   }
   .nav-btn svg {
     width: 18px;
@@ -1211,6 +1230,37 @@ body.no-scroll {
 @media (min-width: 1280px) {
   :root {
     --topbar-height: 72px;
+
+    /* Escala tipográfica TV (lectura a distancia) */
+    --fs-caption: 13px;
+    --fs-small:   15px;
+    --fs-body:    17px;
+    --fs-lead:    19px;
+    --fs-heading: 22px;
+    --font-display: 700 44px/50px var(--font-family);
+    --font-title:   600 24px/30px var(--font-family);
+    --font-body:    400 17px/25px var(--font-family);
+    --font-caption: 600 13px/17px var(--font-family);
+  }
+
+  /* Foco bien visible a distancia en TODOS los controles */
+  .btn:focus-visible, .icon-btn:focus-visible, .nav-btn:focus-visible,
+  .ep-item:focus-visible, .server-pick-item:focus-visible, .letter-btn:focus-visible,
+  .filter-select:focus-visible, .search-bar input:focus-visible {
+    outline: 3px solid var(--pastel-ice);
+    outline-offset: 3px;
+  }
+
+  /* Sin desenfoque en TV: superficies casi opacas (el blur sobre video es caro en GPUs Mali) */
+  .overlay {
+    background: rgba(6, 8, 12, 0.9);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .sheet {
+    background: rgba(18, 23, 34, 0.98);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   #topbar {
     padding: 0 max(32px, env(safe-area-inset-left));
@@ -1220,7 +1270,7 @@ body.no-scroll {
   }
   .nav-btn {
     padding: 8px 16px;
-    font-size: 12px;
+    font-size: var(--fs-small);
     gap: 4px;
   }
   .nav-btn svg {
@@ -1233,8 +1283,8 @@ body.no-scroll {
     padding: 24px max(32px, env(safe-area-inset-right)) 80px max(32px, env(safe-area-inset-left));
   }
   .anime-card .info .title {
-    font-size: 13.5px;
-    line-height: 18px;
+    font-size: var(--fs-small);
+    line-height: 21px;
   }
   .anime-card:focus, .anime-card:focus-visible {
     transform: scale(1.05);
@@ -1263,19 +1313,29 @@ body.no-scroll {
     padding: 12px 16px;
   }
   .ep-item .ep-info .ep-num {
-    font-size: 14.5px;
+    font-size: var(--fs-body);
   }
 }
 
 /* Modo TV de alta densidad (4K UHD >= 2560px) */
 @media (min-width: 2560px) {
+  :root {
+    --fs-caption: 15px;
+    --fs-small:   17px;
+    --fs-body:    19px;
+    --fs-lead:    21px;
+    --fs-heading: 24px;
+    --font-title:   600 26px/32px var(--font-family);
+    --font-body:    400 19px/27px var(--font-family);
+    --font-caption: 600 15px/19px var(--font-family);
+  }
   .anime-grid {
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
     gap: 22px;
   }
   .anime-card .info .title {
-    font-size: 15px;
-    line-height: 20px;
+    font-size: var(--fs-small);
+    line-height: 24px;
   }
 }
 
@@ -1300,7 +1360,7 @@ body.no-scroll {
   border: 1px solid rgba(165, 200, 228, 0.14);
 }
 .setting-title {
-  font-size: 16px;
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -1329,12 +1389,12 @@ body.no-scroll {
   border: 1px solid rgba(165, 200, 228, 0.4);
 }
 .autonext-title {
-  font-size: 17px;
+  font-size: var(--fs-lead);
   font-weight: 700;
   color: var(--text-primary);
 }
 .autonext-count {
-  font-size: 13px;
+  font-size: var(--fs-small);
   opacity: 0.75;
 }
 .autonext-actions {
@@ -1351,4 +1411,201 @@ body.no-scroll {
   background: var(--pastel-peach, #f2c9a0);
   border-color: transparent;
   font-weight: 700;
+}
+
+/* ---------- Accesibilidad: movimiento reducido ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .spinner { animation: spin 1.6s linear infinite !important; } /* el indicador de carga sigue siendo visible */
+  .anime-card:focus, .anime-card:focus-visible { transform: none; }
+}
+
+/* ---------- Reproductor: barra de progreso (OSD) y saltar intro ---------- */
+.player-osd {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 14px max(32px, env(safe-area-inset-left)) 12px;
+  /* degradado corto y suave: los subtítulos grabados en el video quedan casi intactos */
+  background: linear-gradient(0deg, rgba(8, 10, 15, 0.7) 0%, transparent 100%);
+  transition: opacity var(--dur-normal) var(--ease-fluid), transform var(--dur-normal) var(--ease-fluid);
+}
+.player-osd.hud-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(16px);
+}
+.osd-track {
+  position: relative;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: height var(--dur-fast) var(--ease-fluid);
+}
+.player-osd.seeking .osd-track { height: 10px; }
+.osd-buf, .osd-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: var(--radius-full);
+}
+.osd-buf  { background: rgba(255, 255, 255, 0.22); }
+.osd-fill { background: var(--grad-ice-lilac); }
+.osd-thumb {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--pastel-ice);
+  box-shadow: var(--glow-ice);
+  transform: translate(-50%, -50%);
+}
+.osd-delta {
+  position: absolute;
+  bottom: 22px;
+  right: 0;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(10, 14, 22, 0.92);
+  border: 1px solid var(--glass-border-light);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-fluid);
+}
+.osd-delta.show { opacity: 1; }
+.osd-times {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.osd-left { display: flex; gap: 14px; align-items: center; }
+.osd-state { color: var(--text-primary); font-weight: 600; }
+
+.skip-intro {
+  position: absolute;
+  right: max(32px, env(safe-area-inset-right));
+  bottom: 84px;
+  z-index: 25;
+}
+
+/* Insignia de pausa (la barra se oculta para no tapar los subtítulos) */
+.pause-badge {
+  position: absolute;
+  top: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 19;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  background: rgba(10, 14, 22, 0.85);
+  border: 1px solid var(--glass-border-light);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-fluid);
+}
+.pause-badge.show { opacity: 1; }
+.player-osd:not(.hud-hidden) ~ .pause-badge { opacity: 0; } /* con la barra visible ya dice "Pausa" */
+
+/* ---------- Home: banner destacado y filas horizontales ---------- */
+.home-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 230px;
+  margin: 16px 20px 4px;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(165, 200, 228, 0.12) 0%, rgba(216, 180, 248, 0.1) 100%), var(--bg-base);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--soft-shadow);
+}
+.hero-art {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 46%;
+  background-size: cover;
+  background-position: center 25%;
+  opacity: 0.55;
+  /* se funde hacia la izquierda sin usar blur (barato para la GPU) */
+  -webkit-mask-image: linear-gradient(to left, #000 35%, transparent 100%);
+  mask-image: linear-gradient(to left, #000 35%, transparent 100%);
+}
+.hero-info {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 24px 28px;
+  max-width: 62%;
+}
+.hero-title {
+  font: var(--font-display);
+  font-size: clamp(24px, 3.4vw, 40px);
+  line-height: 1.15;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hero-meta {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.anime-row {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding: 14px 20px 18px;   /* espacio para el escalado del foco */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.anime-row::-webkit-scrollbar { display: none; }
+.anime-row .anime-card {
+  flex: 0 0 124px;
+  width: 124px;
+}
+
+@media (max-width: 480px) {
+  .home-hero { margin: 12px 14px 2px; min-height: 200px; }
+  .hero-info { max-width: 80%; padding: 18px; }
+  .anime-row { padding-inline: 14px; }
+}
+@media (min-width: 1280px) {
+  .home-hero { min-height: 300px; margin-inline: max(32px, env(safe-area-inset-left)); }
+  .hero-info { padding: 32px 40px; gap: 14px; }
+  .anime-row { padding-inline: max(32px, env(safe-area-inset-left)); gap: 18px; }
+  .anime-row .anime-card { flex-basis: 150px; width: 150px; }
+}
+@media (min-width: 2560px) {
+  .home-hero { min-height: 400px; }
+  .anime-row .anime-card { flex-basis: 190px; width: 190px; }
 }

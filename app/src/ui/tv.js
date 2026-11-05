@@ -2,6 +2,8 @@
 // Implementa Navegación Espacial D-Pad, detección de control remoto,
 // mapeo de teclas de hardware y desplazamiento automático fluido.
 
+import { isTopLevel } from './navstate.js';
+
 const TV_KEYCODES = {
   // D-Pad Arrows
   UP:    [38, 19], // ArrowUp, Android DPAD_UP
@@ -71,11 +73,20 @@ export function handleGlobalBack(navigate) {
     return;
   }
 
-  // 4. Si estamos en una subpágina, regresar a la portada
+  // 4. Subpantalla (detalle...): volver a la pantalla anterior (con su scroll y foco);
+  //    pestaña principal que no es Inicio: ir a Inicio.
   const path = location.pathname;
   if (path !== '/' && path !== '') {
-    if (navigate) navigate('/');
-    else history.back();
+    if (!isTopLevel(path)) {
+      if (navigate?.back) navigate.back('/');
+      else history.back();
+    } else if (navigate?.replace) {
+      navigate.replace('/');
+    } else if (navigate) {
+      navigate('/');
+    } else {
+      history.back();
+    }
     return;
   }
 
@@ -214,6 +225,45 @@ function _moveFocus(direction) {
           return;
         }
       }
+    }
+  }
+
+  // 1b. Home con banner y filas horizontales: izquierda/derecha dentro de la fila,
+  //     arriba/abajo entre banner y filas manteniendo la columna más cercana
+  const homeRow = current?.closest('.anime-row');
+  const inHero = current?.closest('.home-hero');
+  if (homeRow || inHero) {
+    const blocks = [...document.querySelectorAll('#view .home-hero, #view .anime-row')]
+      .filter((el) => el.querySelector('button, .anime-card'));
+    const here = blocks.findIndex((b) => b.contains(current));
+    const items = (b) => [...b.querySelectorAll('.anime-card, button:not([disabled])')];
+
+    if (direction === 'left' || direction === 'right') {
+      const list = items(blocks[here]);
+      const i = list.indexOf(current);
+      const next = list[i + (direction === 'right' ? 1 : -1)];
+      if (next) { next.focus(); return; }
+      if (direction === 'left' && homeRow) return; // borde izquierdo de la fila: no salir
+      if (direction === 'right') return;           // borde derecho: no salir
+    } else {
+      const target = blocks[here + (direction === 'down' ? 1 : -1)];
+      if (target) {
+        const list = items(target);
+        const cx = current.getBoundingClientRect().left + current.getBoundingClientRect().width / 2;
+        let best = list[0];
+        let bestD = Infinity;
+        for (const el of list) {
+          const r = el.getBoundingClientRect();
+          const d = Math.abs(r.left + r.width / 2 - cx);
+          if (d < bestD) { bestD = d; best = el; }
+        }
+        best?.focus();
+        return;
+      }
+      if (direction === 'up') {                    // sobre el primer bloque: subir al menú
+        document.querySelector('#topbar-nav .nav-btn.active, #topbar-nav .nav-btn')?.focus();
+      }
+      return; // abajo del último bloque: nada más que recorrer
     }
   }
 

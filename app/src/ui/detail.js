@@ -60,7 +60,8 @@ export function renderDetail(svc, slug, navigate) {
     const toggleFav = async () => {
       const now = await svc.favorites.toggle(anime);
       favBtn.className = `btn ${now ? 'primary' : 'ghost'}`;
-      favBtn.querySelector('span').textContent = now ? 'Guardado' : 'Favorito';
+      favBtn.querySelector('span:not(.icon)').textContent = now ? 'Guardado' : 'Favorito';
+      favBtn.querySelector('.icon')?.replaceWith(icon(now ? 'heartFill' : 'heart', 20, now));
     };
     favBtn = btn(isFav ? 'Guardado' : 'Favorito', toggleFav, {
       cls: isFav ? 'primary' : 'ghost',

@@ -1,6 +1,8 @@
-// Pantalla Home: últimos episodios y acceso rápido a favoritos/historial.
-import { h, btn, loading, empty, toast } from './dom.js';
+// Pantalla Home estilo TV: banner destacado + filas horizontales
+// (Continuar viendo, Últimos episodios, Mis favoritos).
+import { h, btn, loading, empty } from './dom.js';
 import { nextTarget, prettyTitle } from '../services/history.js';
+import { fmtTime } from './seek.js';
 
 export function renderHome(svc, navigate) {
   const root = h('div', { class: 'home-screen' });
@@ -9,58 +11,65 @@ export function renderHome(svc, navigate) {
   async function load() {
     root.innerHTML = '';
 
-    // -- Continuar viendo (datos locales: aparece al instante) --
-    const contHolder = h('div', { class: 'continue-holder' });
-    root.append(contHolder);
-    loadContinue(svc, navigate, contHolder);
+    // Contenedores en orden fijo: así cada fila aparece en su sitio aunque los datos lleguen desordenados
+    const heroHolder = h('div', { class: 'hero-holder' });
+    const contHolder = h('div', { class: 'row-holder' });
+    const latestHolder = h('div', { class: 'row-holder' });
+    const favHolder = h('div', { class: 'row-holder' });
+    root.append(heroHolder, contHolder, latestHolder, favHolder);
 
-    // -- Últimos episodios (caché al instante + refresco en segundo plano) --
-    const section = h('div', { class: 'section' },
-      h('div', { class: 'section-head' },
-        h('h2', null, 'Últimos episodios'),
-      ),
-    );
-    const grid = h('div', { class: 'anime-grid' });
-
-    // Pinta la lista conservando la posición del foco (importante con el D-Pad)
-    function paint(list) {
-      const kids = [...grid.children];
-      const focusIdx = kids.findIndex((el) => el === document.activeElement);
-      grid.replaceChildren(...list.map((anime) => _card(anime, navigate)));
-      if (focusIdx !== -1) grid.children[Math.min(focusIdx, grid.children.length - 1)]?.focus({ preventScroll: true });
+    // Banner: "Continuar viendo" tiene prioridad sobre "Últimos episodios"; no se cambia si el usuario ya lo enfocó
+    let heroPrio = 0;
+    function setHero(item, prio) {
+      if (prio <= heroPrio || heroHolder.contains(document.activeElement)) return;
+      heroPrio = prio;
+      heroHolder.replaceChildren(_hero(item, navigate));
     }
 
-    let latest = [];
-    let failed = null;
-    try {
-      latest = await svc.anime.getLatest({ onRefresh: (fresh) => { if (fresh?.length) paint(fresh); } });
-    } catch (e) {
-      failed = e;
-    }
-
-    if (!latest.length) {
-      root.append(
-        empty(
-          failed ? 'Sin conexión' : 'Sin resultados',
-          failed
-            ? 'No se pudieron cargar los últimos episodios y no hay datos guardados. Revisa tu internet.'
-            : 'No hay episodios para mostrar.',
-          btn('Reintentar', () => { root.replaceChildren(loading()); load(); }, { cls: 'primary', ic: 'refresh' }),
-        ),
-      );
-      return;
-    }
-
-    root.append(section);
-    paint(latest);
-    root.append(grid);
+    // Las tres filas cargan en paralelo y de forma independiente
+    const tasks = [
+      loadContinue(svc, navigate, contHolder, setHero),
+      loadLatest(svc, navigate, latestHolder, setHero, root, load),
+      loadFavorites(svc, navigate, favHolder),
+    ];
+    await Promise.allSettled(tasks);
   }
 
   load();
   return root;
 }
 
-async function loadContinue(svc, navigate, holder) {
+// ---------------- Banner ----------------
+
+function _hero(item, navigate) {
+  const hero = h('section', { class: 'home-hero' });
+  const art = h('div', { class: 'hero-art' });
+  if (item.cover) art.style.backgroundImage = `url("${item.cover}")`;
+
+  const info = h('div', { class: 'hero-info' },
+    item.badge ? h('span', { class: 'badge badge-ice' }, item.badge) : null,
+    h('h1', { class: 'hero-title' }, item.title),
+    item.meta ? h('div', { class: 'hero-meta' }, item.meta) : null,
+    h('div', { class: 'hero-actions' },
+      btn(item.label, () => navigate(item.route), { cls: 'primary', ic: 'play' }),
+      btn('Más info', () => navigate(`/anime/${item.slug}`), { cls: 'ghost' }),
+    ),
+  );
+  hero.append(art, info);
+  return hero;
+}
+
+// ---------------- Filas ----------------
+
+function _row(title, cards) {
+  const row = h('div', { class: 'anime-row' }, ...cards);
+  return [
+    h('div', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, title))),
+    row,
+  ];
+}
+
+async function loadContinue(svc, navigate, holder, setHero) {
   let rows = [];
   try { rows = await svc.history.lastPerAnime(12); } catch { return; }
   if (!rows.length) return;
@@ -83,8 +92,7 @@ async function loadContinue(svc, navigate, holder) {
 
   if (!items.length) return;
 
-  const grid = h('div', { class: 'anime-grid' });
-  for (const { row, target, cover } of items) {
+  const cards = items.map(({ row, target, cover }) => {
     const card = _card(
       { slug: row.slug, title: prettyTitle(row), cover, badge: `Ep ${target.epNum}` },
       navigate,
@@ -96,12 +104,80 @@ async function loadContinue(svc, navigate, holder) {
         h('div', { class: 'card-progress' }, h('div', { class: 'card-progress-fill', style: `width:${pct}%` })),
       );
     }
-    grid.append(card);
+    return card;
+  });
+  holder.replaceChildren(..._row('Continuar viendo', cards));
+
+  const first = items[0];
+  setHero({
+    slug: first.row.slug,
+    title: prettyTitle(first.row),
+    cover: first.cover,
+    badge: 'Continuar viendo',
+    meta: first.target.resume && first.row.duration
+      ? `Episodio ${first.target.epNum} · ${fmtTime(first.row.position)} de ${fmtTime(first.row.duration)}`
+      : `Episodio ${first.target.epNum}`,
+    label: first.target.resume ? `Continuar episodio ${first.target.epNum}` : `Ver episodio ${first.target.epNum}`,
+    route: `/watch/${first.row.slug}/${first.target.epNum}`,
+  }, 2);
+}
+
+async function loadLatest(svc, navigate, holder, setHero, root, reload) {
+  let latest = [];
+  let failed = null;
+  const row = h('div', { class: 'anime-row' });
+
+  // Pinta la lista conservando la posición del foco (importante con el D-Pad)
+  function paint(list) {
+    const focusIdx = [...row.children].findIndex((el) => el === document.activeElement);
+    row.replaceChildren(...list.map((anime) => _card(anime, navigate)));
+    if (focusIdx !== -1) row.children[Math.min(focusIdx, row.children.length - 1)]?.focus({ preventScroll: true });
   }
-  holder.append(
-    h('div', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, 'Continuar viendo'))),
-    grid,
+
+  try {
+    latest = await svc.anime.getLatest({ onRefresh: (fresh) => { if (fresh?.length) paint(fresh); } });
+  } catch (e) {
+    failed = e;
+  }
+
+  if (!latest.length) {
+    holder.replaceChildren(
+      empty(
+        failed ? 'Sin conexión' : 'Sin resultados',
+        failed
+          ? 'No se pudieron cargar los últimos episodios y no hay datos guardados. Revisa tu internet.'
+          : 'No hay episodios para mostrar.',
+        btn('Reintentar', () => { root.replaceChildren(loading()); reload(); }, { cls: 'primary', ic: 'refresh' }),
+      ),
+    );
+    return;
+  }
+
+  paint(latest);
+  holder.replaceChildren(
+    h('div', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, 'Últimos episodios'))),
+    row,
   );
+
+  const a = latest[0];
+  setHero({
+    slug: a.slug,
+    title: a.title,
+    cover: a.cover,
+    badge: 'Nuevo',
+    meta: a.badge || '',
+    label: a.epNum ? `Ver episodio ${a.epNum}` : 'Ver ahora',
+    route: a.epNum ? `/watch/${a.slug}/${a.epNum}` : `/anime/${a.slug}`,
+  }, 1);
+}
+
+async function loadFavorites(svc, navigate, holder) {
+  let favs = [];
+  try { favs = await svc.favorites.getAll(); } catch { return; }
+  if (!favs.length) return;
+  const cards = favs.slice(0, 20).map((f) =>
+    _card({ slug: f.slug, title: f.title, cover: f.cover }, navigate, `/anime/${f.slug}`));
+  holder.replaceChildren(..._row('Mis favoritos', cards));
 }
 
 function _card(anime, navigate, route) {

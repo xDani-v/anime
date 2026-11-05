@@ -8,6 +8,7 @@ import { createHistoryService, nextTarget, newEpisodeCount } from '../app/src/se
 import { createBackupService, parseBackup } from '../app/src/services/backup.js';
 import { createCacheService, STALE_MAX } from '../app/src/services/cache.js';
 import { createSettingsService, DEFAULT_SETTINGS } from '../app/src/services/settings.js';
+import { shouldUpdate, httpHint } from '../app/src/services/updater.js';
 
 function makeAnime(slug = 'one-piece') {
   return { slug, title: 'One Piece', cover: 'https://example.com/op.jpg', status: 'En emisión', genres: ['Aventura'] };
@@ -332,4 +333,18 @@ test('backup: rechaza archivos que no son un respaldo y descarta registros corru
   assert.equal(ok.favorites.length, 1);
   assert.equal(ok.history.length, 1);
   assert.equal(ok.history[0].progress, 1); // valores fuera de rango se acotan
+});
+
+// ---------- OTA ----------
+
+test('shouldUpdate solo si el remoto publica otra versión', () => {
+  assert.equal(shouldUpdate('abc1234', 'def5678'), true);
+  assert.equal(shouldUpdate('abc1234', 'abc1234'), false);
+  assert.equal(shouldUpdate('abc1234', undefined), false);
+  assert.equal(shouldUpdate('1.0.0', 'abc1234'), true); // bundle integrado -> primera actualización
+});
+
+test('httpHint explica el 404 de version.json', () => {
+  assert.match(httpHint(404), /público/);
+  assert.match(httpHint(503), /503/);
 });

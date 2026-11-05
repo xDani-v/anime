@@ -1,6 +1,7 @@
 // Pantalla de Ajustes: idioma y servidor preferidos, siguiente automático y datos locales.
 // Todo son botones grandes (navegables con D-Pad).
 import { h, btn, toast, confirmDlg } from './dom.js';
+import { checkForUpdate, lastOtaStatus } from '../services/updater.js';
 
 const LANGS = [['SUB', 'Subtitulado'], ['DUB', 'Doblado']];
 const SERVERS = ['MP4Upload', 'HLS', 'Voe', 'Byse', 'UPNShare'];
@@ -43,6 +44,8 @@ export function renderSettings(svc, navigate) {
         row('Respaldo', 'Guarda favoritos, historial y ajustes en un archivo, o recupéralos de otro dispositivo. Al importar se fusiona con lo que ya tienes.',
           btn('Exportar respaldo', () => exportBackup(svc), { cls: 'ghost', ic: 'download' }),
           btn('Importar respaldo', () => importBackup(svc, render), { cls: 'ghost', ic: 'share' })),
+        row('Actualizaciones', 'La app se actualiza sola al abrirla. Aquí puedes comprobarlo a mano y ver qué pasó.',
+          updateControls()),
         row('Datos guardados', 'La caché acelera la app y permite ver contenido sin conexión.',
           btn('Borrar caché', async () => { await svc.cache.clear(); toast('Caché borrada'); }, { cls: 'ghost', ic: 'trash' }),
           btn('Borrar historial', async () => {
@@ -71,7 +74,7 @@ export function renderSettings(svc, navigate) {
 function versionEl() {
   const el = h('span', null, 'web');
   const Updater = window.Capacitor?.Plugins?.CapacitorUpdater;
-  Updater?.current?.().then((c) => { el.textContent = `versión ${c?.bundle?.id || 'integrada'}`; }).catch(() => {});
+  Updater?.current?.().then((c) => { el.textContent = `versión ${c?.bundle?.version || c?.bundle?.id || 'integrada'}`; }).catch(() => {});
   return el;
 }
 
@@ -107,4 +110,25 @@ function importBackup(svc, refresh) {
   });
   document.body.append(input);
   input.click();
+}
+
+// Botón "Buscar actualizaciones" + resultado de la última comprobación (útil para diagnosticar en la TV)
+function updateControls() {
+  const status = h('div', { class: 'caption-sub', style: 'flex-basis:100%' }, describeStatus(lastOtaStatus()));
+  const b = btn('Buscar actualizaciones', async () => {
+    b.disabled = true;
+    status.textContent = 'Buscando…';
+    const res = await checkForUpdate(toast);
+    status.textContent = describeStatus(lastOtaStatus() || res);
+    b.disabled = false;
+    toast(res.detail, res.state === 'error' ? 'error' : undefined);
+  }, { cls: 'ghost', ic: 'refresh' });
+  return [b, status];
+}
+
+function describeStatus(st) {
+  if (!st) return 'Aún no se ha comprobado en este dispositivo.';
+  const label = { uptodate: 'Al día', updated: 'Actualizando', error: 'Error', unavailable: 'No disponible' }[st.state] || st.state;
+  const when = st.at ? ` · ${new Date(st.at).toLocaleString('es', { dateStyle: 'short', timeStyle: 'short' })}` : '';
+  return `${label}${when}${st.detail ? ` — ${st.detail}` : ''}`;
 }
