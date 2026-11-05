@@ -287,8 +287,13 @@ export function renderPlayer(svc, slug, epNum, navigate) {
         if (i < btns.length - 1) btns[i + 1].focus();
       } else if (e.key === 'ArrowDown' || e.keyCode === 20) {
         e.preventDefault();
-        document.activeElement.blur(); // devolver el control al video
-        try { wrap.querySelector('iframe')?.focus(); } catch {}
+        // Abajo desde la barra: al botón "Saltar intro" si está visible; si no, devolver el control al video
+        if (skipBtn.style.display !== 'none') {
+          skipBtn.focus();
+        } else {
+          document.activeElement.blur();
+          try { wrap.querySelector('iframe')?.focus(); } catch {}
+        }
       }
       // Enter / OK: se deja actuar al botón enfocado (no hacer play/pausa)
       if (e.key !== 'n' && e.key !== 'N' && e.key !== 'p' && e.key !== 'P' && e.key !== 's' && e.key !== 'S') return;
@@ -304,8 +309,17 @@ export function renderPlayer(svc, slug, epNum, navigate) {
       return;
     }
 
-    // Tecla para abrir selector de servidores: Flecha Abajo o tecla 's'
-    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+    // Flecha Abajo: NO abre nada por sí sola (antes abría el selector de servidores sin querer).
+    // Si "Saltar intro" está visible, baja hasta él; si no, solo muestra la barra de progreso.
+    if (e.key === 'ArrowDown' || e.keyCode === 20) {
+      e.preventDefault();
+      if (skipBtn.style.display !== 'none') skipBtn.focus();
+      showHUD();
+      return;
+    }
+
+    // Selector de servidores: botón "Cambiar servidor" de la barra superior (↑ y →) o tecla 's'
+    if (e.key === 's' || e.key === 'S') {
       e.preventDefault();
       openServerPickerModal();
       return;

@@ -36,7 +36,7 @@ export function renderSettings(svc, navigate) {
       h('div', { class: 'settings-list' },
         row('Idioma preferido', 'Se usa al abrir un episodio. Si no existe en ese idioma, se muestra el otro.',
           ...LANGS.map(([v, l]) => choice('lang', v, l, st.lang))),
-        row('Servidor preferido', 'Si falla, puedes cambiarlo desde el reproductor (flecha abajo).',
+        row('Servidor preferido', 'Si falla, puedes cambiarlo desde el reproductor (flecha arriba, botón «Cambiar servidor»).',
           ...SERVERS.map((s) => choice('server', s, s, st.server))),
         row('Siguiente episodio automático', 'Al terminar, cuenta atrás de 5 s que puedes cancelar.',
           choice('autoNext', true, 'Activado', st.autoNext),
